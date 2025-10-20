@@ -242,11 +242,18 @@ class DeliverableService:
                         message=None
                     ))
 
-        # Save validation log
+        # Save validation log (convert datetime to ISO string for JSON serialization)
+        validation_log_serializable = []
+        for v in validation_log:
+            entry = v.model_dump()
+            if 'timestamp' in entry and entry['timestamp']:
+                entry['timestamp'] = entry['timestamp'].isoformat()
+            validation_log_serializable.append(entry)
+
         self.storage.update_one(
             "deliverables",
             deliverable_id,
-            {"validation_log": json.dumps([v.model_dump() for v in validation_log])}
+            {"validation_log": json.dumps(validation_log_serializable)}
         )
 
         return validation_log
