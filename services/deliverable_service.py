@@ -61,7 +61,10 @@ class DeliverableService:
         rendered_content = {}
 
         for binding in template.section_bindings:
-            section_content = self._assemble_section_content(binding)
+            section_content = self._assemble_section_content(
+                binding,
+                deliverable_data.instance_data
+            )
             rendered_content[binding.section_name] = section_content
 
             # Track element versions used
@@ -102,8 +105,12 @@ class DeliverableService:
 
         return self.get_deliverable(deliverable_id)
 
-    def _assemble_section_content(self, binding) -> str:
-        """Assemble content for a section from bound Elements"""
+    def _assemble_section_content(self, binding, instance_data: Dict[str, Any]) -> str:
+        """
+        Assemble content for a section from bound Elements
+
+        Injects instance field values using {field_name} syntax
+        """
         content_parts = []
 
         for elem_id in binding.element_ids:
@@ -111,7 +118,16 @@ class DeliverableService:
             if element and element.status == "approved":
                 content_parts.append(element.content or "")
 
-        return "\n\n".join(content_parts)
+        # Join element content
+        assembled_content = "\n\n".join(content_parts)
+
+        # Inject instance field values using {field_name} syntax
+        if instance_data:
+            for field_name, field_value in instance_data.items():
+                placeholder = f"{{{field_name}}}"
+                assembled_content = assembled_content.replace(placeholder, str(field_value))
+
+        return assembled_content
 
     def get_deliverable(self, deliverable_id: UUID) -> Optional[Deliverable]:
         """Get a Deliverable by ID"""
