@@ -3,12 +3,17 @@ Explore existing Neo4j structure for StoryOS
 """
 from neo4j import GraphDatabase
 import json
+import os
+from dotenv import load_dotenv
 
-# Connection details
-NEO4J_URI = "neo4j+s://REDACTED_HOST"
-NEO4J_USER = "neo4j"
-NEO4J_PASS = "REDACTED"
-NEO4J_DATABASE = "neo4j"
+# Load environment variables
+load_dotenv()
+
+# Connection details from environment
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASS = os.getenv("NEO4J_PASS")
+NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
 def explore_database():
     """Connect and explore the Neo4j database structure"""
