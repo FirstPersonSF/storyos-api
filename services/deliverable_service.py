@@ -238,6 +238,7 @@ class DeliverableService:
             raise ValueError(f"Deliverable {deliverable_id} not found")
 
         template = self.template_service.get_template(deliverable.template_id)
+        story_model = self.story_model_service.get_story_model(deliverable.story_model_id)
         validation_log = []
 
         # Check instance fields
@@ -257,6 +258,83 @@ class DeliverableService:
                         passed=True,
                         message=None
                     ))
+
+        # Check Story Model constraints
+        if story_model and story_model.constraints:
+            for constraint in story_model.constraints:
+                section_name = constraint.section_name
+                constraint_type = constraint.constraint_type
+                params = constraint.params
+
+                # Get section content
+                section_content = deliverable.rendered_content.get(section_name, '')
+
+                # Word count validation
+                if constraint_type == 'max_words':
+                    word_count = len(section_content.split())
+                    max_words = params.get('max_words', 0)
+
+                    if word_count > max_words:
+                        validation_log.append(ValidationLogEntry(
+                            timestamp=datetime.now(),
+                            rule=f"story_model_{section_name}_max_words",
+                            passed=False,
+                            message=f"{section_name} has {word_count} words, exceeds max {max_words}"
+                        ))
+                    else:
+                        validation_log.append(ValidationLogEntry(
+                            timestamp=datetime.now(),
+                            rule=f"story_model_{section_name}_max_words",
+                            passed=True,
+                            message=None
+                        ))
+
+                # Required element validation
+                elif constraint_type == 'requires_element':
+                    element_name = params.get('element_name')
+
+                    # Check if any used elements match the required name
+                    has_element = False
+                    for elem_id in deliverable.element_versions.keys():
+                        elem = self.unf_service.get_element(UUID(elem_id))
+                        if elem and elem.name == element_name:
+                            has_element = True
+                            break
+
+                    if not has_element:
+                        validation_log.append(ValidationLogEntry(
+                            timestamp=datetime.now(),
+                            rule=f"story_model_{section_name}_requires_{element_name.replace(' ', '_')}",
+                            passed=False,
+                            message=f"{section_name} requires element '{element_name}'"
+                        ))
+                    else:
+                        validation_log.append(ValidationLogEntry(
+                            timestamp=datetime.now(),
+                            rule=f"story_model_{section_name}_requires_{element_name.replace(' ', '_')}",
+                            passed=True,
+                            message=None
+                        ))
+
+                # Required fields validation (for instance data)
+                elif constraint_type == 'requires_fields':
+                    required_fields = params.get('fields', [])
+                    missing_fields = [f for f in required_fields if f not in deliverable.instance_data]
+
+                    if missing_fields:
+                        validation_log.append(ValidationLogEntry(
+                            timestamp=datetime.now(),
+                            rule=f"story_model_{section_name}_requires_fields",
+                            passed=False,
+                            message=f"{section_name} missing fields: {', '.join(missing_fields)}"
+                        ))
+                    else:
+                        validation_log.append(ValidationLogEntry(
+                            timestamp=datetime.now(),
+                            rule=f"story_model_{section_name}_requires_fields",
+                            passed=True,
+                            message=None
+                        ))
 
         # Save validation log (convert datetime to ISO string for JSON serialization)
         validation_log_serializable = []

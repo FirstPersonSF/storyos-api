@@ -191,7 +191,6 @@ print("  - Instance field validation WORKING (7/7 checks passed for Press Releas
 print("\n⚠️  LIMITATIONS (Expected for Phase 1):")
 print("  - Brand Voice rules NOT applied to content (only tracked)")
 print("  - Content is simple concatenation, not Story Model-aware composition")
-print("  - Validation only checks field presence, not Story Model constraints")
 
 print("\n📊 PHASE 1 vs FULL TEST CASE:")
 print("  Deliverable Generation: ✅ YES")
@@ -200,7 +199,7 @@ print("  Voice Rules Applied: ❌ NO (Phase 2)")
 print("  Instance Fields Collected: ✅ YES")
 print("  Instance Fields Validated: ✅ YES (presence check)")
 print("  Instance Fields Used in Content: ✅ YES (via {field_name} placeholder injection)")
-print("  Validation Logs: ✅ YES (instance fields)")
-print("  Story Model Constraint Validation: ❌ NO (Phase 2)")
+print("  Validation Logs: ✅ YES (instance fields + Story Model constraints)")
+print("  Story Model Constraint Validation: ✅ YES (word count, required elements, required fields)")
 
 print("\n" + "=" * 80)
