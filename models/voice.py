@@ -79,6 +79,7 @@ class BrandVoice(BrandVoiceBase):
     id: UUID4
     parent_voice_id: Optional[UUID4] = None
     status: VoiceStatus
+    rules: Optional[Dict[str, Any]] = Field(None, description="Phase 2: Voice transformation rules (lexicon, terminology, tone)")
     created_at: datetime
     updated_at: datetime
 

@@ -46,7 +46,7 @@ class VoiceService:
             return None
 
         # Parse JSON fields back to objects
-        for field in ['traits', 'tone_rules', 'style_guardrails', 'lexicon', 'metadata']:
+        for field in ['traits', 'tone_rules', 'style_guardrails', 'lexicon', 'metadata', 'rules']:
             if field in row and isinstance(row[field], str):
                 row[field] = json.loads(row[field])
 
@@ -88,7 +88,7 @@ class VoiceService:
         # Parse JSON fields
         voices = []
         for row in rows:
-            for field in ['traits', 'tone_rules', 'style_guardrails', 'lexicon', 'metadata']:
+            for field in ['traits', 'tone_rules', 'style_guardrails', 'lexicon', 'metadata', 'rules']:
                 if field in row and isinstance(row[field], str):
                     row[field] = json.loads(row[field])
             voices.append(BrandVoice(**row))
