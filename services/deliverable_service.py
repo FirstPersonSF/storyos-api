@@ -195,8 +195,41 @@ class DeliverableService:
         deliverable_id: UUID,
         update_data: DeliverableUpdate
     ) -> Deliverable:
-        """Update a Deliverable"""
+        """
+        Update a Deliverable
+
+        Re-renders content if voice_id or instance_data changes
+        """
+        deliverable = self.get_deliverable(deliverable_id)
+        if not deliverable:
+            raise ValueError(f"Deliverable {deliverable_id} not found")
+
         data = update_data.model_dump(exclude_unset=True, exclude_none=True)
+
+        # Check if we need to re-render
+        needs_rerender = 'voice_id' in data or 'instance_data' in data
+
+        if needs_rerender:
+            # Get template and re-render with new voice/instance data
+            template = self.template_service.get_template_with_bindings(deliverable.template_id)
+
+            # Use new voice or keep existing
+            voice_id = data.get('voice_id', deliverable.voice_id)
+            voice = self.voice_service.get_voice(voice_id)
+
+            # Use new instance data or keep existing
+            instance_data = data.get('instance_data', deliverable.instance_data)
+
+            # Re-render content with current element versions
+            rendered_content = {}
+            for binding in template.section_bindings:
+                section_content = self._assemble_section_content(binding, instance_data)
+                rendered_content[binding.section_name] = section_content
+
+            # Update data with re-rendered content, new voice ID and version
+            data['rendered_content'] = rendered_content
+            data['voice_id'] = voice_id
+            data['voice_version'] = voice.version
 
         # Convert complex fields to JSON
         for field in ['instance_data', 'rendered_content', 'metadata']:
@@ -208,6 +241,81 @@ class DeliverableService:
             data['status'] = data['status'].value
 
         self.storage.update_one("deliverables", deliverable_id, data)
+        return self.get_deliverable(deliverable_id)
+
+    def refresh_deliverable(self, deliverable_id: UUID) -> Deliverable:
+        """
+        Refresh a Deliverable with latest element versions
+
+        Re-renders content using the most recent approved versions
+        of all elements used in the deliverable
+        """
+        deliverable = self.get_deliverable(deliverable_id)
+        if not deliverable:
+            raise ValueError(f"Deliverable {deliverable_id} not found")
+
+        # Get template
+        template = self.template_service.get_template_with_bindings(deliverable.template_id)
+
+        # Get current voice
+        voice = self.voice_service.get_voice(deliverable.voice_id)
+
+        # Find latest versions of elements and re-render
+        element_versions = {}
+        rendered_content = {}
+
+        for binding in template.section_bindings:
+            # Find latest approved versions of elements bound to this section
+            section_content_parts = []
+
+            for elem_id in binding.element_ids:
+                # Get current element
+                old_element = self.unf_service.get_element(elem_id)
+                if not old_element:
+                    continue
+
+                # Find latest approved version by name
+                all_elements = self.unf_service.list_elements()
+                latest_approved = None
+                latest_version = "0.0"
+
+                for elem in all_elements:
+                    if elem.name == old_element.name and elem.status == "approved":
+                        if elem.version > latest_version:
+                            latest_version = elem.version
+                            latest_approved = elem
+
+                if latest_approved:
+                    section_content_parts.append(latest_approved.content or "")
+                    element_versions[str(latest_approved.id)] = latest_approved.version
+
+            # Assemble section content with instance field injection
+            section_content = "\n\n".join(section_content_parts)
+
+            # Inject instance fields
+            if deliverable.instance_data:
+                for field_name, field_value in deliverable.instance_data.items():
+                    placeholder = f"{{{field_name}}}"
+                    section_content = section_content.replace(placeholder, str(field_value))
+
+            rendered_content[binding.section_name] = section_content
+
+        # Update deliverable with new versions and content
+        data = {
+            "element_versions": json.dumps(element_versions),
+            "rendered_content": json.dumps(rendered_content),
+            "voice_version": voice.version
+        }
+
+        self.storage.update_one("deliverables", deliverable_id, data)
+
+        # Update relationship tracking
+        for elem_id in element_versions.keys():
+            self.relationship_service.track_element_usage(
+                UUID(elem_id),
+                deliverable_id
+            )
+
         return self.get_deliverable(deliverable_id)
 
     def list_deliverables(self, status: Optional[DeliverableStatus] = None) -> List[Deliverable]:

@@ -63,6 +63,7 @@ class DeliverableCreate(DeliverableBase):
 class DeliverableUpdate(BaseModel):
     """Update a Deliverable"""
     name: Optional[str] = None
+    voice_id: Optional[UUID4] = None
     instance_data: Optional[Dict[str, Any]] = None
     status: Optional[DeliverableStatus] = None
     rendered_content: Optional[Dict[str, str]] = None

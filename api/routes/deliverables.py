@@ -103,3 +103,24 @@ def validate_deliverable(
         return service.validate_deliverable(deliverable_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{deliverable_id}/refresh", response_model=Deliverable)
+def refresh_deliverable(
+    deliverable_id: UUID,
+    service: DeliverableService = Depends(get_deliverable_service)
+):
+    """
+    Refresh a Deliverable with latest element versions
+
+    Re-renders content using the most recent approved versions
+    of all elements used in the deliverable.
+
+    This implements the "Update Available" → "Refresh" workflow.
+    """
+    try:
+        return service.refresh_deliverable(deliverable_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing deliverable: {str(e)}")
