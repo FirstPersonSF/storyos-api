@@ -14,6 +14,8 @@ from models.deliverables import (
     ValidationLogEntry
 )
 from storage.postgres_storage import PostgresStorage
+from services.voice_transformer import VoiceTransformer
+from services.story_model_composer import StoryModelComposer
 
 
 class DeliverableService:
@@ -34,6 +36,10 @@ class DeliverableService:
         self.template_service = template_service
         self.story_model_service = story_model_service
         self.relationship_service = relationship_service
+
+        # Phase 2: Initialize transformers
+        self.voice_transformer = VoiceTransformer()
+        self.story_model_composer = StoryModelComposer()
 
     def create_deliverable(self, deliverable_data: DeliverableCreate) -> Deliverable:
         """
@@ -63,7 +69,9 @@ class DeliverableService:
         for binding in template.section_bindings:
             section_content = self._assemble_section_content(
                 binding,
-                deliverable_data.instance_data
+                deliverable_data.instance_data,
+                story_model,
+                voice
             )
             rendered_content[binding.section_name] = section_content
 
@@ -105,27 +113,51 @@ class DeliverableService:
 
         return self.get_deliverable(deliverable_id)
 
-    def _assemble_section_content(self, binding, instance_data: Dict[str, Any]) -> str:
+    def _assemble_section_content(
+        self,
+        binding,
+        instance_data: Dict[str, Any],
+        story_model,
+        voice
+    ) -> str:
         """
         Assemble content for a section from bound Elements
 
-        Injects instance field values using {field_name} syntax
+        Phase 2: Uses story model strategies and voice transformation
         """
-        content_parts = []
-
+        # Get bound elements
+        bound_elements = []
         for elem_id in binding.element_ids:
             element = self.unf_service.get_element(elem_id)
             if element and element.status == "approved":
-                content_parts.append(element.content or "")
+                bound_elements.append(element)
 
-        # Join element content
-        assembled_content = "\n\n".join(content_parts)
+        if not bound_elements:
+            return ""
 
-        # Inject instance field values using {field_name} syntax
-        if instance_data:
-            for field_name, field_value in instance_data.items():
-                placeholder = f"{{{field_name}}}"
-                assembled_content = assembled_content.replace(placeholder, str(field_value))
+        # Get section strategy from story model (if available)
+        section_strategy = {}
+        if story_model and hasattr(story_model, 'section_strategies') and story_model.section_strategies:
+            section_strategy = story_model.section_strategies.get(binding.section_name, {})
+
+        # If no strategy defined, use default (full_content)
+        if not section_strategy:
+            section_strategy = {'extraction_strategy': 'full_content'}
+
+        # Phase 2: Use story model composer
+        assembled_content = self.story_model_composer.compose_section(
+            section_name=binding.section_name,
+            section_strategy=section_strategy,
+            bound_elements=bound_elements,
+            instance_data=instance_data
+        )
+
+        # Phase 2: Apply voice transformation
+        if voice and hasattr(voice, 'rules') and voice.rules:
+            assembled_content = self.voice_transformer.apply_voice(
+                assembled_content,
+                voice.rules
+            )
 
         return assembled_content
 
@@ -217,13 +249,21 @@ class DeliverableService:
             voice_id = data.get('voice_id', deliverable.voice_id)
             voice = self.voice_service.get_voice(voice_id)
 
+            # Get story model
+            story_model = self.story_model_service.get_story_model(deliverable.story_model_id)
+
             # Use new instance data or keep existing
             instance_data = data.get('instance_data', deliverable.instance_data)
 
-            # Re-render content with current element versions
+            # Re-render content with current element versions (Phase 2: with transformers)
             rendered_content = {}
             for binding in template.section_bindings:
-                section_content = self._assemble_section_content(binding, instance_data)
+                section_content = self._assemble_section_content(
+                    binding,
+                    instance_data,
+                    story_model,
+                    voice
+                )
                 rendered_content[binding.section_name] = section_content
 
             # Update data with re-rendered content, new voice ID and version
@@ -260,13 +300,16 @@ class DeliverableService:
         # Get current voice
         voice = self.voice_service.get_voice(deliverable.voice_id)
 
+        # Get story model
+        story_model = self.story_model_service.get_story_model(deliverable.story_model_id)
+
         # Find latest versions of elements and re-render
         element_versions = {}
         rendered_content = {}
 
         for binding in template.section_bindings:
             # Find latest approved versions of elements bound to this section
-            section_content_parts = []
+            latest_elements = []
 
             for elem_id in binding.element_ids:
                 # Get current element
@@ -286,19 +329,37 @@ class DeliverableService:
                             latest_approved = elem
 
                 if latest_approved:
-                    section_content_parts.append(latest_approved.content or "")
+                    latest_elements.append(latest_approved)
                     element_versions[str(latest_approved.id)] = latest_approved.version
 
-            # Assemble section content with instance field injection
-            section_content = "\n\n".join(section_content_parts)
+            # Phase 2: Use story model composer and voice transformer
+            if latest_elements:
+                # Get section strategy
+                section_strategy = {}
+                if story_model and hasattr(story_model, 'section_strategies') and story_model.section_strategies:
+                    section_strategy = story_model.section_strategies.get(binding.section_name, {})
 
-            # Inject instance fields
-            if deliverable.instance_data:
-                for field_name, field_value in deliverable.instance_data.items():
-                    placeholder = f"{{{field_name}}}"
-                    section_content = section_content.replace(placeholder, str(field_value))
+                if not section_strategy:
+                    section_strategy = {'extraction_strategy': 'full_content'}
 
-            rendered_content[binding.section_name] = section_content
+                # Compose section
+                section_content = self.story_model_composer.compose_section(
+                    section_name=binding.section_name,
+                    section_strategy=section_strategy,
+                    bound_elements=latest_elements,
+                    instance_data=deliverable.instance_data
+                )
+
+                # Apply voice transformation
+                if voice and hasattr(voice, 'rules') and voice.rules:
+                    section_content = self.voice_transformer.apply_voice(
+                        section_content,
+                        voice.rules
+                    )
+
+                rendered_content[binding.section_name] = section_content
+            else:
+                rendered_content[binding.section_name] = ""
 
         # Update deliverable with new versions and content
         data = {
