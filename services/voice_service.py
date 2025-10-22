@@ -88,10 +88,16 @@ class VoiceService:
         # Parse JSON fields
         voices = []
         for row in rows:
+            # Create mutable copy
+            row_data = dict(row)
             for field in ['traits', 'tone_rules', 'style_guardrails', 'lexicon', 'metadata', 'rules']:
-                if field in row and isinstance(row[field], str):
-                    row[field] = json.loads(row[field])
-            voices.append(BrandVoice(**row))
+                if field in row_data and isinstance(row_data[field], str):
+                    try:
+                        row_data[field] = json.loads(row_data[field])
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, set to None or empty dict
+                        row_data[field] = {} if field in ['rules', 'metadata'] else None
+            voices.append(BrandVoice(**row_data))
 
         return voices
 
