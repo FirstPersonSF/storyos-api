@@ -58,9 +58,20 @@ class VoiceTransformer:
                 continue
 
             for generic in generic_terms:
-                # Case-insensitive replacement
-                pattern = re.compile(re.escape(generic), re.IGNORECASE)
-                content = pattern.sub(branded_term, content)
+                # Use word boundaries to avoid matching within other words
+                # For multi-word phrases, use \b at start and end
+                # For single words, use lookbehind/lookahead to avoid matching inside words
+                escaped_generic = re.escape(generic)
+
+                # Check if it's a single word or multi-word phrase
+                if ' ' in generic:
+                    # Multi-word phrase - use word boundaries
+                    pattern = r'\b' + escaped_generic + r'\b'
+                else:
+                    # Single word - use lookbehind/lookahead for more precise matching
+                    pattern = r'(?<![a-zA-Z])' + escaped_generic + r'(?![a-zA-Z])'
+
+                content = re.sub(pattern, branded_term, content, flags=re.IGNORECASE)
 
         return content
 
@@ -186,13 +197,15 @@ class VoiceTransformer:
 
         if perspective == 'third_person':
             # First person → Third person
+            # Use lookbehind and lookahead to ensure we're matching whole words,
+            # not substrings within other words
             replacements = {
-                r'\bWe\b': company_name,
-                r'\bwe\b': company_name,
-                r'\bOur\b': f"{company_name}'s",
-                r'\bour\b': f"{company_name}'s",
-                r'\bUs\b': company_name,
-                r'\bus\b': company_name
+                r'(?<![a-zA-Z])We(?![a-zA-Z])': company_name,
+                r'(?<![a-zA-Z])we(?![a-zA-Z])': company_name,
+                r'(?<![a-zA-Z])Our(?![a-zA-Z])': f"{company_name}'s",
+                r'(?<![a-zA-Z])our(?![a-zA-Z])': f"{company_name}'s",
+                r'(?<![a-zA-Z])Us(?![a-zA-Z])': company_name,
+                r'(?<![a-zA-Z])us(?![a-zA-Z])': company_name
             }
 
             for pattern, replacement in replacements.items():

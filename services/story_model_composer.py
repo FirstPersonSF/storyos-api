@@ -45,10 +45,10 @@ class StoryModelComposer:
         elif strategy == 'quote':
             content = self._extract_quote(bound_elements, instance_data, section_strategy)
         elif strategy == 'full_content':
-            content = self._extract_full_content(bound_elements)
+            content = self._extract_full_content(bound_elements, instance_data)
         else:
             # Default: concatenate all elements
-            content = self._extract_full_content(bound_elements)
+            content = self._extract_full_content(bound_elements, instance_data)
 
         return content
 
@@ -200,17 +200,28 @@ class StoryModelComposer:
         else:
             return f'"{quote_content}"'
 
-    def _extract_full_content(self, elements: List[UNFElement]) -> str:
+    def _extract_full_content(self, elements: List[UNFElement], instance_data: Dict[str, Any] = None) -> str:
         """
         Use complete element content
 
-        Strategy: Concatenate all elements with double newlines
+        Strategy: Concatenate all elements with double newlines,
+        inject instance field placeholders if present
         """
         content_parts = []
 
         for element in elements:
             if element and element.content:
-                content_parts.append(element.content)
+                content = element.content
+
+                # Inject instance field placeholders if present
+                if instance_data and ('{who}' in content or '{what}' in content or '{when}' in content or
+                                      '{where}' in content or '{why}' in content or '{quote' in content):
+                    for field_name, field_value in instance_data.items():
+                        placeholder = f"{{{field_name}}}"
+                        if placeholder in content:
+                            content = content.replace(placeholder, str(field_value))
+
+                content_parts.append(content)
 
         return '\n\n'.join(content_parts)
 
