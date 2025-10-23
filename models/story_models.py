@@ -33,6 +33,7 @@ class StoryModelBase(BaseModel):
     description: Optional[str] = Field(None, description="Model purpose and use cases")
     sections: List[Section] = Field(default_factory=list, description="Ordered list of sections")
     constraints: List[SectionConstraint] = Field(default_factory=list, description="Validation rules")
+    section_strategies: Optional[Dict[str, Dict[str, Any]]] = Field(None, description="Extraction strategies for each section")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
