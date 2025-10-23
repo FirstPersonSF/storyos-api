@@ -49,7 +49,7 @@ class ImpactAlert(BaseModel):
 
 class DeliverableBase(BaseModel):
     """Base Deliverable model"""
-    name: Optional[str] = Field(None, max_length=200, description="Deliverable name")
+    name: str = Field(..., min_length=1, max_length=200, description="Deliverable name (required)")
     instance_data: Dict[str, Any] = Field(default_factory=dict, description="Instance-specific fields (who, what, when, etc.)")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
