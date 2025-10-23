@@ -76,6 +76,23 @@ def get_deliverable_with_alerts(
     return deliverable
 
 
+@router.get("/{deliverable_id}/versions", response_model=List[Deliverable])
+def get_deliverable_versions(
+    deliverable_id: UUID,
+    service: DeliverableService = Depends(get_deliverable_service)
+):
+    """
+    Get all versions of a Deliverable
+
+    Returns version history sorted by version number (newest first).
+    Traces the full version chain through prev_deliverable_id links.
+    """
+    versions = service.get_deliverable_versions(deliverable_id)
+    if not versions:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    return versions
+
+
 @router.put("/{deliverable_id}", response_model=Deliverable)
 def update_deliverable(
     deliverable_id: UUID,

@@ -15,6 +15,7 @@ class DeliverableStatus(str, Enum):
     REVIEW = "review"
     APPROVED = "approved"
     PUBLISHED = "published"
+    SUPERSEDED = "superseded"
 
 
 # ============================================================================
@@ -64,6 +65,7 @@ class DeliverableUpdate(BaseModel):
     """Update a Deliverable"""
     name: Optional[str] = None
     voice_id: Optional[UUID4] = None
+    story_model_id: Optional[UUID4] = None
     instance_data: Optional[Dict[str, Any]] = None
     status: Optional[DeliverableStatus] = None
     rendered_content: Optional[Dict[str, str]] = None
@@ -79,6 +81,8 @@ class Deliverable(DeliverableBase):
     voice_id: UUID4
     voice_version: str
     status: DeliverableStatus
+    version: int = Field(1, description="Version number (increments with each update)")
+    prev_deliverable_id: Optional[UUID4] = Field(None, description="Previous version of this deliverable")
     element_versions: Dict[str, str] = Field(default_factory=dict, description="Snapshot of Element versions used")
     rendered_content: Dict[str, str] = Field(default_factory=dict, description="Final rendered text by section")
     validation_log: List[ValidationLogEntry] = Field(default_factory=list)
