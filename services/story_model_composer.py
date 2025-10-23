@@ -171,46 +171,48 @@ class StoryModelComposer:
         """
         Extract quote with attribution
 
-        Uses instance data for speaker name and title.
-        If element contains a numbered list (e.g., principles), extracts one item.
+        Prefers quote content from instance data (quote1_content, quote2_content).
+        Falls back to extracting from bound elements if no instance data provided.
         """
-        if not elements:
-            return ""
-
         # Get quote number from strategy
         quote_num = strategy.get('quote_number', 1)
 
         # Get speaker and title from instance data
         speaker_key = f"quote{quote_num}_speaker"
         title_key = f"quote{quote_num}_title"
+        content_key = f"quote{quote_num}_content"
 
         speaker = instance_data.get(speaker_key, '')
         title = instance_data.get(title_key, '')
 
-        # Get quote content from element
-        quote_content = elements[0].content or ""
+        # PREFER: Use quote content from instance data if provided
+        quote_content = instance_data.get(content_key, '')
 
-        # Remove placeholder markers if present
-        quote_content = quote_content.replace('{quote}', '').strip()
+        # FALLBACK: Extract from elements if no instance data provided
+        if not quote_content and elements:
+            quote_content = elements[0].content or ""
 
-        # Detect if content is a numbered list (e.g., "1. Item\n2. Item")
-        import re
-        list_items = re.findall(r'^\d+\.\s+\*\*([^*]+)\*\*\s+[–—-]\s+(.+)$', quote_content, re.MULTILINE)
+            # Remove placeholder markers if present
+            quote_content = quote_content.replace('{quote}', '').strip()
 
-        if list_items:
-            # Extract based on quote number (default to first item)
-            item_index = (quote_num - 1) % len(list_items)  # Wrap around if quote_num exceeds list length
-            item_label, item_content = list_items[item_index]
-            quote_content = item_content.strip()
-        else:
-            # Check for simpler numbered list format
-            simple_list = re.findall(r'^\d+\.\s+(.+)$', quote_content, re.MULTILINE)
-            if simple_list and len(simple_list) > 1:
-                # Multiple items found, extract one
-                item_index = (quote_num - 1) % len(simple_list)
-                quote_content = simple_list[item_index].strip()
-                # Remove markdown bold markers if present
-                quote_content = re.sub(r'\*\*([^*]+)\*\*\s+[–—-]\s+', '', quote_content)
+            # Detect if content is a numbered list (e.g., "1. Item\n2. Item")
+            import re
+            list_items = re.findall(r'^\d+\.\s+\*\*([^*]+)\*\*\s+[–—-]\s+(.+)$', quote_content, re.MULTILINE)
+
+            if list_items:
+                # Extract based on quote number (default to first item)
+                item_index = (quote_num - 1) % len(list_items)  # Wrap around if quote_num exceeds list length
+                item_label, item_content = list_items[item_index]
+                quote_content = item_content.strip()
+            else:
+                # Check for simpler numbered list format
+                simple_list = re.findall(r'^\d+\.\s+(.+)$', quote_content, re.MULTILINE)
+                if simple_list and len(simple_list) > 1:
+                    # Multiple items found, extract one
+                    item_index = (quote_num - 1) % len(simple_list)
+                    quote_content = simple_list[item_index].strip()
+                    # Remove markdown bold markers if present
+                    quote_content = re.sub(r'\*\*([^*]+)\*\*\s+[–—-]\s+', '', quote_content)
 
         # Format quote with attribution
         if speaker and title:
