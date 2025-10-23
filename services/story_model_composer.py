@@ -172,6 +172,7 @@ class StoryModelComposer:
         Extract quote with attribution
 
         Uses instance data for speaker name and title.
+        If element contains a numbered list (e.g., principles), extracts one item.
         """
         if not elements:
             return ""
@@ -191,6 +192,25 @@ class StoryModelComposer:
 
         # Remove placeholder markers if present
         quote_content = quote_content.replace('{quote}', '').strip()
+
+        # Detect if content is a numbered list (e.g., "1. Item\n2. Item")
+        import re
+        list_items = re.findall(r'^\d+\.\s+\*\*([^*]+)\*\*\s+[–—-]\s+(.+)$', quote_content, re.MULTILINE)
+
+        if list_items:
+            # Extract based on quote number (default to first item)
+            item_index = (quote_num - 1) % len(list_items)  # Wrap around if quote_num exceeds list length
+            item_label, item_content = list_items[item_index]
+            quote_content = item_content.strip()
+        else:
+            # Check for simpler numbered list format
+            simple_list = re.findall(r'^\d+\.\s+(.+)$', quote_content, re.MULTILINE)
+            if simple_list and len(simple_list) > 1:
+                # Multiple items found, extract one
+                item_index = (quote_num - 1) % len(simple_list)
+                quote_content = simple_list[item_index].strip()
+                # Remove markdown bold markers if present
+                quote_content = re.sub(r'\*\*([^*]+)\*\*\s+[–—-]\s+', '', quote_content)
 
         # Format quote with attribution
         if speaker and title:
