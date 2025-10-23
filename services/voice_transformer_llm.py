@@ -2,9 +2,11 @@
 LLM-Based Voice Transformer Service
 
 Uses Claude API to apply brand voice rules intelligently with context-awareness.
+Supports transformation profiles for section-aware transformation strategies.
 """
 from typing import Dict, List, Any, Optional
 from services.llm_client import get_llm_client
+from services.transformation_profiles import TransformationProfiles
 
 
 class LLMVoiceTransformer:
@@ -20,7 +22,7 @@ class LLMVoiceTransformer:
         use_llm: bool = True
     ) -> str:
         """
-        Apply voice transformation using LLM
+        Apply voice transformation using LLM (legacy method)
 
         Args:
             content: Original content to transform
@@ -44,6 +46,93 @@ class LLMVoiceTransformer:
 
         # Build comprehensive prompt from all voice guidelines
         prompt = self._build_transformation_prompt(voice_config, content)
+
+        # Transform via LLM
+        try:
+            transformed = self.llm_client.transform_content(
+                prompt=prompt,
+                temperature=0.0  # Deterministic for consistency
+            )
+            return transformed.strip()
+        except Exception as e:
+            # On error, return original content with warning logged
+            print(f"Voice transformation error: {e}")
+            return content
+
+    def apply_voice_with_profile(
+        self,
+        content: str,
+        voice_config: Dict[str, Any],
+        section_name: str,
+        constraints: Optional[Dict[str, Any]] = None,
+        story_model_override: Optional[str] = None,
+        template_override: Optional[str] = None,
+        use_llm: bool = True
+    ) -> str:
+        """
+        Apply voice transformation using section-aware transformation profile.
+
+        This is the preferred method for deliverable rendering as it respects
+        section-specific transformation strategies.
+
+        Args:
+            content: Original content to transform
+            voice_config: Brand voice configuration
+            section_name: Name of section (e.g., "Headline", "Quote 1", "Body")
+            constraints: Optional section constraints (max_words, format, etc.)
+            story_model_override: Optional profile override from Story Model
+            template_override: Optional profile override from Template
+            use_llm: If False, skip LLM (for testing/comparison)
+
+        Returns:
+            Transformed content
+        """
+        if not use_llm:
+            return content
+
+        if not content or not content.strip():
+            return content
+
+        # Get transformation profile for this section
+        profile = TransformationProfiles.get_profile_for_section(
+            section_name=section_name,
+            story_model_override=story_model_override,
+            template_override=template_override
+        )
+
+        # If profile says don't apply voice, return content as-is
+        if not profile.get('apply_voice', False):
+            # For PRESERVE profile, return exactly as provided
+            # For REDUCE_ONLY profile, check if content exceeds constraints
+            if constraints and 'max_words' in constraints:
+                word_count = len(content.split())
+                max_words = constraints['max_words']
+                if word_count > max_words:
+                    # Only reduce if necessary
+                    prompt = TransformationProfiles.build_profile_prompt(
+                        profile=profile,
+                        voice_config=voice_config,
+                        content=content,
+                        constraints=constraints
+                    )
+                    try:
+                        transformed = self.llm_client.transform_content(
+                            prompt=prompt,
+                            temperature=0.0
+                        )
+                        return transformed.strip()
+                    except Exception as e:
+                        print(f"Voice transformation error: {e}")
+                        return content
+            return content
+
+        # Build profile-specific prompt
+        prompt = TransformationProfiles.build_profile_prompt(
+            profile=profile,
+            voice_config=voice_config,
+            content=content,
+            constraints=constraints
+        )
 
         # Transform via LLM
         try:

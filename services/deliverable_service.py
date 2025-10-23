@@ -175,11 +175,14 @@ class DeliverableService:
                 'rules': voice.rules if hasattr(voice, 'rules') else {}
             }
 
-            # Use LLM transformer (fallback to regex if LLM fails)
+            # Use LLM transformer with profile-aware transformation (fallback to regex if LLM fails)
             try:
-                assembled_content = self.llm_voice_transformer.apply_voice(
-                    assembled_content,
-                    voice_config
+                # Pass section name and constraints for profile-aware transformation
+                assembled_content = self.llm_voice_transformer.apply_voice_with_profile(
+                    content=assembled_content,
+                    voice_config=voice_config,
+                    section_name=binding.section_name,
+                    constraints=section_strategy  # Section strategy includes max_words, format, etc.
                 )
             except Exception as e:
                 print(f"LLM transformation failed, using regex fallback: {e}")
