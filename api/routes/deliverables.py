@@ -70,10 +70,15 @@ def get_deliverable_with_alerts(
 
     Returns alerts if any UNF Elements used by this Deliverable have been updated
     """
-    deliverable = service.get_deliverable_with_alerts(deliverable_id)
-    if not deliverable:
-        raise HTTPException(status_code=404, detail="Deliverable not found")
-    return deliverable
+    try:
+        deliverable = service.get_deliverable_with_alerts(deliverable_id)
+        if not deliverable:
+            raise HTTPException(status_code=404, detail="Deliverable not found")
+        return deliverable
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading deliverable: {str(e)}")
 
 
 @router.get("/{deliverable_id}/versions", response_model=List[Deliverable])
@@ -125,6 +130,7 @@ def validate_deliverable(
 @router.post("/{deliverable_id}/refresh", response_model=Deliverable)
 def refresh_deliverable(
     deliverable_id: UUID,
+    force: bool = False,
     service: DeliverableService = Depends(get_deliverable_service)
 ):
     """
@@ -134,10 +140,14 @@ def refresh_deliverable(
     of all elements used in the deliverable.
 
     This implements the "Update Available" → "Refresh" workflow.
+
+    **Parameters:**
+    - **force**: If True, refreshes even if draft element updates exist (default: False).
+                 Normally, refresh is blocked when elements have draft versions pending approval.
     """
     try:
-        return service.refresh_deliverable(deliverable_id)
+        return service.refresh_deliverable(deliverable_id, force=force)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error refreshing deliverable: {str(e)}")
