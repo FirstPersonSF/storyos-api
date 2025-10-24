@@ -198,6 +198,11 @@ class DeliverableService:
                     section_name=binding.section_name,
                     constraints=section_strategy  # Section strategy includes max_words, format, etc.
                 )
+                # DEBUG: Log transformation results
+                print(f"[TRANSFORM] Section: {binding.section_name}")
+                print(f"[TRANSFORM]   Content length: {len(assembled_content)}")
+                print(f"[TRANSFORM]   Notes length: {len(transformation_notes) if transformation_notes else 0}")
+                print(f"[TRANSFORM]   Notes preview: {transformation_notes[:100] if transformation_notes else '(empty)'}")
             except Exception as e:
                 print(f"LLM transformation failed, using regex fallback: {e}")
                 # Fallback to regex transformer with just rules
