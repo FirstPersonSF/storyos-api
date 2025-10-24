@@ -129,6 +129,9 @@ class DeliverableService:
                 deliverable_id
             )
 
+        # Automatically run validation after creation
+        self.validate_deliverable(deliverable_id)
+
         return self.get_deliverable(deliverable_id)
 
     def _assemble_section_content(
