@@ -184,6 +184,26 @@ class SupabaseStorage(BaseStorage):
         result = query.execute()
         return result.data if result.data else []
 
+    def delete_one(
+        self,
+        table: str,
+        id_value: Any,
+        id_column: str = "id"
+    ) -> bool:
+        """
+        Delete a single row by ID
+
+        Args:
+            table: Table name
+            id_value: ID value
+            id_column: ID column name (default: 'id')
+
+        Returns:
+            True if row was deleted
+        """
+        result = self.client.table(table).delete().eq(id_column, str(id_value)).execute()
+        return len(result.data) > 0 if result.data else False
+
     def _serialize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Convert UUIDs and other non-JSON-serializable types to strings

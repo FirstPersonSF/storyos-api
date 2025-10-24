@@ -87,51 +87,127 @@ class UNFService:
         update_data: ElementUpdate
     ) -> Element:
         """
-        Update an Element (creates new version)
+        Update an Element
 
-        This follows the version chain pattern:
-        1. Create new Element with updated content
-        2. Link to previous version via prev_element_id
-        3. Mark old version as 'superseded'
+        Behavior depends on current status:
+        - DRAFT: Edits in-place (allows multiple edits before approval)
+        - APPROVED: Creates new draft version (versioning workflow)
+        - SUPERSEDED: Not allowed
         """
         # Get current element
         current = self.get_element(element_id)
         if not current:
             raise ValueError(f"Element {element_id} not found")
 
-        # Parse version number and increment
-        version_parts = current.version.split('.')
-        major, minor = int(version_parts[0]), int(version_parts[1])
-        new_version = f"{major}.{minor + 1}"
+        # DRAFT: Edit in-place
+        if current.status == ElementStatus.DRAFT:
+            update_fields = {}
+            if update_data.content is not None:
+                update_fields['content'] = update_data.content
+            if update_data.metadata is not None:
+                update_fields['metadata'] = json.dumps(update_data.metadata)
 
-        # Prepare new element data
-        new_data = {
-            "layer_id": current.layer_id,
-            "name": current.name,
-            "content": update_data.content if update_data.content is not None else current.content,
-            "version": new_version,
-            "status": update_data.status.value if update_data.status else current.status.value,
-            "prev_element_id": element_id,  # Link to old version
-            "metadata": json.dumps(
-                update_data.metadata if update_data.metadata is not None else current.metadata
+            if update_fields:
+                self.storage.update_one("unf_elements", element_id, update_fields)
+
+            return self.get_element(element_id)
+
+        # APPROVED: Create new draft version
+        elif current.status == ElementStatus.APPROVED:
+            # Parse version number and increment
+            version_parts = current.version.split('.')
+            major, minor = int(version_parts[0]), int(version_parts[1])
+            new_version = f"{major}.{minor + 1}"
+
+            # Prepare new draft element
+            new_data = {
+                "layer_id": current.layer_id,
+                "name": current.name,
+                "content": update_data.content if update_data.content is not None else current.content,
+                "version": new_version,
+                "status": ElementStatus.DRAFT.value,  # New version starts as draft
+                "prev_element_id": element_id,  # Link to old version
+                "metadata": json.dumps(
+                    update_data.metadata if update_data.metadata is not None else current.metadata
+                )
+            }
+
+            # Create new draft version (old version stays approved)
+            new_element_id = self.storage.insert_one(
+                "unf_elements",
+                new_data,
+                returning="id"
             )
-        }
 
-        # Create new version
-        new_element_id = self.storage.insert_one(
-            "unf_elements",
-            new_data,
-            returning="id"
-        )
+            return self.get_element(new_element_id)
 
-        # Mark old version as superseded
+        # SUPERSEDED: Not allowed
+        else:
+            raise ValueError(
+                f"Cannot update {current.status.value} element. "
+                f"Only draft and approved elements can be updated."
+            )
+
+    def delete_element(self, element_id: UUID) -> None:
+        """
+        Delete a draft element
+
+        Only draft elements can be deleted. Attempting to delete
+        approved or superseded elements raises an error.
+        """
+        element = self.get_element(element_id)
+        if not element:
+            raise ValueError(f"Element {element_id} not found")
+
+        if element.status != ElementStatus.DRAFT:
+            raise ValueError(
+                f"Cannot delete {element.status.value} element. "
+                f"Only draft elements can be deleted."
+            )
+
+        self.storage.delete_one("unf_elements", element_id)
+
+    def approve_element(self, element_id: UUID) -> Element:
+        """
+        Approve a draft element
+
+        If another approved version with the same name exists,
+        it will be superseded.
+        """
+        element = self.get_element(element_id)
+        if not element:
+            raise ValueError(f"Element {element_id} not found")
+
+        if element.status != ElementStatus.DRAFT:
+            raise ValueError(f"Element is already {element.status.value}")
+
+        # Find existing approved version with same name
+        all_elements = self.list_elements()
+        existing_approved = None
+
+        for elem in all_elements:
+            if (elem.name == element.name and
+                elem.status == ElementStatus.APPROVED and
+                elem.id != element_id):
+                existing_approved = elem
+                break
+
+        # If approved version exists, supersede it
+        if existing_approved:
+            self.storage.update_one(
+                "unf_elements",
+                existing_approved.id,
+                {"status": ElementStatus.SUPERSEDED.value}
+            )
+
+        # Approve the draft
         self.storage.update_one(
             "unf_elements",
             element_id,
-            {"status": ElementStatus.SUPERSEDED.value}
+            {"status": ElementStatus.APPROVED.value}
         )
 
-        return self.get_element(new_element_id)
+        return self.get_element(element_id)
 
     def list_elements(
         self,

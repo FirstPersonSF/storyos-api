@@ -115,6 +115,40 @@ def get_element_versions(
     return service.get_element_version_chain(element_id)
 
 
+@router.delete("/elements/{element_id}", status_code=204)
+def delete_element(
+    element_id: UUID,
+    service: UNFService = Depends(get_unf_service)
+):
+    """
+    Delete a draft element
+
+    Only draft elements can be deleted. Attempting to delete
+    approved or superseded elements returns 400 error.
+    """
+    try:
+        service.delete_element(element_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/elements/{element_id}/approve", response_model=Element)
+def approve_element(
+    element_id: UUID,
+    service: UNFService = Depends(get_unf_service)
+):
+    """
+    Approve a draft element
+
+    Changes status from draft to approved. If another approved version
+    with the same name exists, it will be superseded.
+    """
+    try:
+        return service.approve_element(element_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/elements/latest/approved", response_model=List[Element])
 def get_latest_approved_elements(
     layer_id: Optional[UUID] = None,
