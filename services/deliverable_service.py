@@ -757,6 +757,10 @@ class DeliverableService:
                             message=None
                         ))
 
+        # Press Release Specific Validation Rules
+        if template.name == "Press Release":
+            self._validate_press_release(deliverable, validation_log)
+
         # Save validation log (convert datetime to ISO string for JSON serialization)
         validation_log_serializable = []
         for v in validation_log:
@@ -772,3 +776,196 @@ class DeliverableService:
         )
 
         return validation_log
+
+    def _validate_press_release(self, deliverable: Deliverable, validation_log: List[ValidationLogEntry]):
+        """
+        Press Release specific validation rules:
+        1. Headline ≤10 words and must include one action verb
+        2. Lede must contain "who, what, when, where, and why"
+        3. Key Facts section must include 3 Key Messages
+        4. Each Quote requires text and attribution fields
+        5. Boilerplate section required
+        6. Voice validation required before publishing
+        """
+        import re
+
+        # Rule 1: Headline ≤10 words and must include one action verb
+        headline = deliverable.rendered_content.get('Headline', '')
+        word_count = len(headline.split())
+
+        # Check word count
+        if word_count > 10:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_headline_max_10_words",
+                passed=False,
+                message=f"Headline has {word_count} words, must be ≤10 words"
+            ))
+        else:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_headline_max_10_words",
+                passed=True,
+                message=None
+            ))
+
+        # Check for action verb (common action verbs in press releases)
+        action_verbs = [
+            'announces', 'launches', 'introduces', 'reveals', 'unveils', 'releases',
+            'delivers', 'achieves', 'expands', 'extends', 'partners', 'acquires',
+            'secures', 'wins', 'earns', 'receives', 'opens', 'closes', 'completes',
+            'establishes', 'creates', 'develops', 'builds', 'implements', 'deploys'
+        ]
+        has_action_verb = any(verb in headline.lower() for verb in action_verbs)
+
+        if not has_action_verb:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_headline_action_verb",
+                passed=False,
+                message="Headline must include an action verb (e.g., announces, launches, introduces)"
+            ))
+        else:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_headline_action_verb",
+                passed=True,
+                message=None
+            ))
+
+        # Rule 2: Lede must contain who, what, when, where, and why
+        lede = deliverable.rendered_content.get('Lede', '').lower()
+        five_ws = {
+            'who': deliverable.instance_data.get('who', ''),
+            'what': deliverable.instance_data.get('what', ''),
+            'when': deliverable.instance_data.get('when', ''),
+            'where': deliverable.instance_data.get('where', ''),
+            'why': deliverable.instance_data.get('why', '')
+        }
+
+        missing_ws = [w for w, value in five_ws.items() if not value]
+
+        if missing_ws:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_lede_five_ws",
+                passed=False,
+                message=f"Lede missing: {', '.join(missing_ws)}"
+            ))
+        else:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_lede_five_ws",
+                passed=True,
+                message=None
+            ))
+
+        # Rule 3: Key Facts must include 3 items
+        key_facts = deliverable.rendered_content.get('Key Facts', '')
+        # Count bullet points (lines starting with -)
+        bullet_count = len([line for line in key_facts.split('\n') if line.strip().startswith('-')])
+
+        if bullet_count < 3:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_key_facts_min_3",
+                passed=False,
+                message=f"Key Facts has {bullet_count} items, requires 3 Key Messages"
+            ))
+        else:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_key_facts_min_3",
+                passed=True,
+                message=None
+            ))
+
+        # Rule 4: Each Quote requires text and attribution
+        for quote_num in [1, 2]:
+            quote_text = deliverable.instance_data.get(f'quote{quote_num}_text', '')
+            quote_speaker = deliverable.instance_data.get(f'quote{quote_num}_speaker', '')
+            quote_title = deliverable.instance_data.get(f'quote{quote_num}_title', '')
+
+            # Quote 1 is required, Quote 2 is optional
+            if quote_num == 1:
+                if not quote_text:
+                    validation_log.append(ValidationLogEntry(
+                        timestamp=datetime.now(),
+                        rule=f"press_release_quote{quote_num}_text_required",
+                        passed=False,
+                        message=f"Quote {quote_num} text is required"
+                    ))
+                else:
+                    validation_log.append(ValidationLogEntry(
+                        timestamp=datetime.now(),
+                        rule=f"press_release_quote{quote_num}_text_required",
+                        passed=True,
+                        message=None
+                    ))
+
+                if not quote_speaker or not quote_title:
+                    validation_log.append(ValidationLogEntry(
+                        timestamp=datetime.now(),
+                        rule=f"press_release_quote{quote_num}_attribution_required",
+                        passed=False,
+                        message=f"Quote {quote_num} requires both speaker and title"
+                    ))
+                else:
+                    validation_log.append(ValidationLogEntry(
+                        timestamp=datetime.now(),
+                        rule=f"press_release_quote{quote_num}_attribution_required",
+                        passed=True,
+                        message=None
+                    ))
+            else:
+                # Quote 2 is optional, but if provided, must have attribution
+                if quote_text and (not quote_speaker or not quote_title):
+                    validation_log.append(ValidationLogEntry(
+                        timestamp=datetime.now(),
+                        rule=f"press_release_quote{quote_num}_attribution_required",
+                        passed=False,
+                        message=f"Quote {quote_num} has text but missing speaker or title"
+                    ))
+                elif quote_text:
+                    validation_log.append(ValidationLogEntry(
+                        timestamp=datetime.now(),
+                        rule=f"press_release_quote{quote_num}_attribution_required",
+                        passed=True,
+                        message=None
+                    ))
+
+        # Rule 5: Boilerplate section required
+        boilerplate = deliverable.rendered_content.get('Boilerplate', '')
+
+        if not boilerplate or len(boilerplate.strip()) == 0:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_boilerplate_required",
+                passed=False,
+                message="Boilerplate section is required"
+            ))
+        else:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_boilerplate_required",
+                passed=True,
+                message=None
+            ))
+
+        # Rule 6: Voice validation (check if transformation notes exist as indicator of voice application)
+        has_transformation_notes = bool(deliverable.metadata.get('transformation_notes'))
+
+        if not has_transformation_notes:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_voice_validation",
+                passed=False,
+                message="Voice transformation required before publishing"
+            ))
+        else:
+            validation_log.append(ValidationLogEntry(
+                timestamp=datetime.now(),
+                rule="press_release_voice_validation",
+                passed=True,
+                message=None
+            ))
