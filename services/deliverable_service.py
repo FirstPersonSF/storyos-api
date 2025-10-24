@@ -728,6 +728,11 @@ Respond with ONLY valid JSON in this exact format:
 
         deliverables = []
         for row in rows:
+            # Skip deliverables with NULL names (data integrity issue)
+            if row.get('name') is None:
+                print(f"Warning: Skipping deliverable {row.get('id')} with NULL name")
+                continue
+
             for field in ['instance_data', 'element_versions', 'rendered_content', 'validation_log', 'metadata']:
                 if field in row and isinstance(row[field], str):
                     row[field] = json.loads(row[field])
