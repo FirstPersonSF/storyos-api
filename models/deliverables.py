@@ -5,7 +5,7 @@ Final outputs with provenance and impact tracking
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, UUID4
+from pydantic import BaseModel, Field, UUID4, ConfigDict
 from enum import Enum
 
 
@@ -24,7 +24,9 @@ class DeliverableStatus(str, Enum):
 
 class ValidationLogEntry(BaseModel):
     """Single validation check result"""
-    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+    model_config = ConfigDict(
+        json_schema_serialization_defaults_required=True
+    )
 
     timestamp: datetime
     rule: str = Field(..., description="Validation rule that was checked")

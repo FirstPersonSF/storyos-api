@@ -575,9 +575,25 @@ Respond with ONLY valid JSON in this exact format:
             new_deliverable_data['element_versions'] = element_versions
 
         # Convert complex fields to JSON
-        for field in ['instance_data', 'rendered_content', 'metadata', 'element_versions', 'validation_log']:
+        for field in ['instance_data', 'rendered_content', 'metadata', 'element_versions']:
             if field in new_deliverable_data and isinstance(new_deliverable_data[field], (dict, list)):
                 new_deliverable_data[field] = json.dumps(new_deliverable_data[field])
+
+        # Handle validation_log specially to convert ValidationLogEntry objects to dicts with datetime serialization
+        if 'validation_log' in new_deliverable_data:
+            validation_log = new_deliverable_data['validation_log']
+            if isinstance(validation_log, list):
+                # Convert ValidationLogEntry objects to dicts
+                validation_log_dicts = []
+                for entry in validation_log:
+                    if hasattr(entry, 'model_dump'):
+                        # It's a Pydantic model, convert to dict
+                        entry_dict = entry.model_dump(mode='json')
+                        validation_log_dicts.append(entry_dict)
+                    else:
+                        # Already a dict
+                        validation_log_dicts.append(entry)
+                new_deliverable_data['validation_log'] = json.dumps(validation_log_dicts)
 
         # Handle status enum
         if isinstance(new_deliverable_data['status'], DeliverableStatus):

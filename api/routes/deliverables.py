@@ -98,7 +98,7 @@ def get_deliverable_versions(
     return versions
 
 
-@router.put("/{deliverable_id}", response_model=Deliverable)
+@router.put("/{deliverable_id}")
 def update_deliverable(
     deliverable_id: UUID,
     update_data: DeliverableUpdate,
@@ -106,7 +106,9 @@ def update_deliverable(
 ):
     """Update a Deliverable"""
     try:
-        return service.update_deliverable(deliverable_id, update_data)
+        deliverable = service.update_deliverable(deliverable_id, update_data)
+        # Use model_dump with mode='json' to properly serialize datetime objects
+        return deliverable.model_dump(mode='json')
     except Exception as e:
         raise HTTPException(status_code=404, detail=str(e))
 
