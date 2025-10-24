@@ -196,6 +196,11 @@ class TransformationProfiles:
         """
         sections = []
 
+        # Header - role and task
+        sections.append("You are a professional copyeditor transforming content to match a specific brand voice.")
+        sections.append("Apply the transformation instructions below while following the constraints.")
+        sections.append("")
+
         # Profile Instructions
         sections.append("# Transformation Instructions")
         sections.append(profile["instructions"])
@@ -248,6 +253,17 @@ class TransformationProfiles:
         # Content to transform
         sections.append("# Content to Transform")
         sections.append(content)
+        sections.append("")
+
+        # JSON output format
+        sections.append("# OUTPUT FORMAT")
+        sections.append("Return your response as valid JSON with this exact structure:")
+        sections.append("{")
+        sections.append('  "transformed_content": "The transformed content here...",')
+        sections.append('  "transformation_notes": "Brief explanation of key changes made (e.g., tone adjustments, word replacements, constraint handling, etc.)"')
+        sections.append("}")
+        sections.append("")
+        sections.append("IMPORTANT: Return ONLY the JSON object, no additional text before or after.")
 
         return '\n'.join(sections)
 
