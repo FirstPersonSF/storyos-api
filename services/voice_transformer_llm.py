@@ -144,25 +144,53 @@ class LLMVoiceTransformer:
 
             # Parse JSON response
             import json
-            try:
-                # Clean up response (remove markdown code blocks if present)
-                json_str = transformed.strip()
-                if json_str.startswith('```json'):
-                    json_str = json_str[7:]  # Remove ```json
-                if json_str.startswith('```'):
-                    json_str = json_str[3:]   # Remove ```
-                if json_str.endswith('```'):
-                    json_str = json_str[:-3]  # Remove trailing ```
-                json_str = json_str.strip()
+            import os
+            import time
 
+            # DEBUG: Save raw response to file for inspection
+            debug_dir = '/Users/drewf/Desktop/Python/storyos_protoype/llm_debug'
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_file = f"{debug_dir}/response_{int(time.time() * 1000)}.json"
+            with open(debug_file, 'w') as f:
+                f.write(f"=== RAW RESPONSE ===\n{transformed}\n\n")
+
+            # Clean up response (remove markdown code blocks if present)
+            json_str = transformed.strip()
+
+            # Remove markdown code blocks
+            if json_str.startswith('```'):
+                # Find end of first line (```json or just ```)
+                first_newline = json_str.find('\n')
+                if first_newline != -1:
+                    json_str = json_str[first_newline+1:]
+                # Remove closing ```
+                if json_str.endswith('```'):
+                    json_str = json_str[:json_str.rfind('```')]
+
+            json_str = json_str.strip()
+
+            # DEBUG: Save cleaned JSON string
+            with open(debug_file, 'a') as f:
+                f.write(f"=== CLEANED JSON ===\n{json_str}\n\n")
+
+            # Try parsing
+            try:
                 result = json.loads(json_str)
-                return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
+                if isinstance(result, dict) and 'transformed_content' in result:
+                    with open(debug_file, 'a') as f:
+                        f.write(f"=== PARSED SUCCESSFULLY ===\n")
+                    return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
             except json.JSONDecodeError as json_err:
                 print(f"JSON parsing error: {json_err}")
-                print(f"Raw response: {transformed[:500]}")  # Log first 500 chars
-                # Fallback: try the old extraction method
-                cleaned, commentary = self._extract_meta_commentary(transformed)
-                return cleaned.strip(), commentary
+                print(f"Attempted to parse: {json_str[:200]}...")
+                print(f"Full response saved to: {debug_file}")
+                with open(debug_file, 'a') as f:
+                    f.write(f"=== PARSE ERROR ===\n{json_err}\n")
+
+            # Final fallback: return original content
+            print("Could not parse JSON, returning original content")
+            print(f"Full response saved to: {debug_file}")
+            return content, "JSON parsing failed"
 
         except Exception as e:
             # On error, return original content with warning logged
@@ -254,25 +282,53 @@ class LLMVoiceTransformer:
 
             # Parse JSON response
             import json
-            try:
-                # Clean up response (remove markdown code blocks if present)
-                json_str = transformed.strip()
-                if json_str.startswith('```json'):
-                    json_str = json_str[7:]  # Remove ```json
-                if json_str.startswith('```'):
-                    json_str = json_str[3:]   # Remove ```
-                if json_str.endswith('```'):
-                    json_str = json_str[:-3]  # Remove trailing ```
-                json_str = json_str.strip()
+            import os
+            import time
 
+            # DEBUG: Save raw response to file for inspection
+            debug_dir = '/Users/drewf/Desktop/Python/storyos_protoype/llm_debug'
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_file = f"{debug_dir}/response_{int(time.time() * 1000)}.json"
+            with open(debug_file, 'w') as f:
+                f.write(f"=== RAW RESPONSE ===\n{transformed}\n\n")
+
+            # Clean up response (remove markdown code blocks if present)
+            json_str = transformed.strip()
+
+            # Remove markdown code blocks
+            if json_str.startswith('```'):
+                # Find end of first line (```json or just ```)
+                first_newline = json_str.find('\n')
+                if first_newline != -1:
+                    json_str = json_str[first_newline+1:]
+                # Remove closing ```
+                if json_str.endswith('```'):
+                    json_str = json_str[:json_str.rfind('```')]
+
+            json_str = json_str.strip()
+
+            # DEBUG: Save cleaned JSON string
+            with open(debug_file, 'a') as f:
+                f.write(f"=== CLEANED JSON ===\n{json_str}\n\n")
+
+            # Try parsing
+            try:
                 result = json.loads(json_str)
-                return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
+                if isinstance(result, dict) and 'transformed_content' in result:
+                    with open(debug_file, 'a') as f:
+                        f.write(f"=== PARSED SUCCESSFULLY ===\n")
+                    return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
             except json.JSONDecodeError as json_err:
                 print(f"JSON parsing error: {json_err}")
-                print(f"Raw response: {transformed[:500]}")  # Log first 500 chars
-                # Fallback: try the old extraction method
-                cleaned, commentary = self._extract_meta_commentary(transformed)
-                return cleaned.strip(), commentary
+                print(f"Attempted to parse: {json_str[:200]}...")
+                print(f"Full response saved to: {debug_file}")
+                with open(debug_file, 'a') as f:
+                    f.write(f"=== PARSE ERROR ===\n{json_err}\n")
+
+            # Final fallback: return original content
+            print("Could not parse JSON, returning original content")
+            print(f"Full response saved to: {debug_file}")
+            return content, "JSON parsing failed"
 
         except Exception as e:
             # On error, return original content with warning logged
