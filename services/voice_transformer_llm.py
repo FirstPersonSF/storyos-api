@@ -238,6 +238,11 @@ class LLMVoiceTransformer:
             template_override=template_override
         )
 
+        # DEBUG: Log profile selection
+        print(f"[PROFILE] Section: {section_name}")
+        print(f"[PROFILE]   Profile name: {profile.get('name', 'unknown')}")
+        print(f"[PROFILE]   Apply voice: {profile.get('apply_voice', False)}")
+
         # If profile says don't apply voice, return content as-is
         if not profile.get('apply_voice', False):
             # For PRESERVE profile, return exactly as provided
