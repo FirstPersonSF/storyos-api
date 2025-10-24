@@ -179,7 +179,18 @@ class LLMVoiceTransformer:
                 if isinstance(result, dict) and 'transformed_content' in result:
                     with open(debug_file, 'a') as f:
                         f.write(f"=== PARSED SUCCESSFULLY ===\n")
-                    return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
+
+                    # Handle transformed_content as either string or array
+                    transformed_content = result.get('transformed_content', '')
+                    if isinstance(transformed_content, list):
+                        # Convert array to markdown list
+                        transformed_content = '\n'.join([f"- {item}" for item in transformed_content])
+                    elif isinstance(transformed_content, str):
+                        transformed_content = transformed_content.strip()
+
+                    transformation_notes = result.get('transformation_notes', '')
+
+                    return transformed_content, transformation_notes
             except json.JSONDecodeError as json_err:
                 print(f"JSON parsing error: {json_err}")
                 print(f"Attempted to parse: {json_str[:200]}...")
@@ -322,7 +333,18 @@ class LLMVoiceTransformer:
                 if isinstance(result, dict) and 'transformed_content' in result:
                     with open(debug_file, 'a') as f:
                         f.write(f"=== PARSED SUCCESSFULLY ===\n")
-                    return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
+
+                    # Handle transformed_content as either string or array
+                    transformed_content = result.get('transformed_content', '')
+                    if isinstance(transformed_content, list):
+                        # Convert array to markdown list
+                        transformed_content = '\n'.join([f"- {item}" for item in transformed_content])
+                    elif isinstance(transformed_content, str):
+                        transformed_content = transformed_content.strip()
+
+                    transformation_notes = result.get('transformation_notes', '')
+
+                    return transformed_content, transformation_notes
             except json.JSONDecodeError as json_err:
                 print(f"JSON parsing error: {json_err}")
                 print(f"Attempted to parse: {json_str[:200]}...")
