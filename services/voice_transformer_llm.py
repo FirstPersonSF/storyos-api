@@ -175,7 +175,7 @@ class LLMVoiceTransformer:
 
             # Try parsing
             try:
-                result = json.loads(json_str)
+                result = json.loads(json_str, strict=False)
                 if isinstance(result, dict) and 'transformed_content' in result:
                     with open(debug_file, 'a') as f:
                         f.write(f"=== PARSED SUCCESSFULLY ===\n")
@@ -313,7 +313,7 @@ class LLMVoiceTransformer:
 
             # Try parsing
             try:
-                result = json.loads(json_str)
+                result = json.loads(json_str, strict=False)
                 if isinstance(result, dict) and 'transformed_content' in result:
                     with open(debug_file, 'a') as f:
                         f.write(f"=== PARSED SUCCESSFULLY ===\n")
