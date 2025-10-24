@@ -132,19 +132,29 @@ def main():
             "layer_name": "Messaging",
             "name": "Key Messages",
             "content": """Key Message 1
-**Headline**: Transform data into real-world outcomes
-**Proof**: Our Reality Technology connects physical and digital realities to improve performance and sustainability.
-**Benefit**: Enables industries to act faster and more responsibly.
+Headline: Transform data into real-world outcomes
+Proof: Our Reality Technology connects physical and digital realities to improve performance and sustainability.
+Benefit: Enables industries to act faster and more responsibly.
 
 Key Message 2
-**Headline**: Capture, create, and shape reality
-**Proof**: We unify sensors, software, and AI to bridge the gap from data to action.
-**Benefit**: Turns data into decisions that improve efficiency and safety.
+Headline: Capture, create, and shape reality
+Proof: We unify sensors, software, and AI to bridge the gap from data to action.
+Benefit: Turns data into decisions that improve efficiency and safety.
 
 Key Message 3
-**Headline**: Empower industries to innovate responsibly
-**Proof**: Our tools accelerate digital transformation without sacrificing quality or responsibility.
-**Benefit**: Helps customers achieve progress that benefits people and the planet.""",
+Headline: Empower industries to innovate responsibly
+Proof: Our tools accelerate digital transformation without sacrificing quality or responsibility.
+Benefit: Helps customers achieve progress that benefits people and the planet.
+
+Key Message 4
+Headline: The leader in Reality Technology
+Proof: No other company combines robotics and software at this scale.
+Benefit: Ensures trusted solutions that drive autonomy and efficiency worldwide.
+
+Key Message 5
+Headline: Shape reality
+Proof: We deliver precision, innovation, and measurable results.
+Benefit: Inspires confidence to build a world where business and humanity thrive.""",
             "version": "1.0",
             "status": ElementStatus.APPROVED
         },
@@ -284,6 +294,44 @@ Key Message 3
     model_ids["pyramid"] = pyramid_model.id
     print(f"  ✅ Created Story Model: {pyramid_model.name}")
 
+    # Add section strategies to Inverted Pyramid model
+    section_strategies = {
+        'Headline': {
+            'extraction_strategy': 'field_extraction',
+            'field_path': 'headline',  # Extract from Key Messages element's 'headline' field
+            'constraints': {'max_words': 10}
+        },
+        'Lede': {
+            'extraction_strategy': 'composed',  # LLM composes from instance_data + Vision Statement
+            'composition_sources': ['instance_data.who', 'instance_data.what', 'instance_data.when', 'instance_data.where', 'instance_data.why', 'element.Vision Statement'],
+            'constraints': {}
+        },
+        'Key Facts': {
+            'extraction_strategy': 'field_extraction',
+            'field_path': 'proof',  # Extract 'proof' fields from Key Messages (select 3)
+            'selection_count': 3,
+            'constraints': {'format': 'markdown'}
+        },
+        'Quote 1': {
+            'extraction_strategy': 'instance_data',  # Comes from instance_data.quote1_text, quote1_speaker, quote1_title
+            'instance_fields': ['quote1_text', 'quote1_speaker', 'quote1_title'],
+            'constraints': {}
+        },
+        'Quote 2': {
+            'extraction_strategy': 'instance_data',  # Comes from instance_data.quote2_text, quote2_speaker, quote2_title
+            'instance_fields': ['quote2_text', 'quote2_speaker', 'quote2_title'],
+            'constraints': {}
+        },
+        'Boilerplate': {
+            'extraction_strategy': 'full_content',  # Use full Boilerplate element
+            'constraints': {}
+        }
+    }
+    storage.update_one('story_models', pyramid_model.id, {
+        'section_strategies': section_strategies
+    })
+    print(f"  ✅ Added section strategies to Inverted Pyramid")
+
     # ========================================================================
     # 5. CREATE DELIVERABLE TEMPLATES
     # ========================================================================
@@ -337,8 +385,10 @@ Key Message 3
             InstanceField(name="when", field_type=InstanceFieldType.DATE, required=True, description="Date"),
             InstanceField(name="where", field_type=InstanceFieldType.TEXT, required=True, description="Location"),
             InstanceField(name="why", field_type=InstanceFieldType.TEXT, required=True, description="Reason/benefit"),
+            InstanceField(name="quote1_text", field_type=InstanceFieldType.TEXT, required=True, description="Executive quote (full quote text)"),
             InstanceField(name="quote1_speaker", field_type=InstanceFieldType.TEXT, required=True, description="Executive name"),
             InstanceField(name="quote1_title", field_type=InstanceFieldType.TEXT, required=True, description="Executive title"),
+            InstanceField(name="quote2_text", field_type=InstanceFieldType.TEXT, required=False, description="Customer quote (full quote text)"),
             InstanceField(name="quote2_speaker", field_type=InstanceFieldType.TEXT, required=False, description="Customer name"),
             InstanceField(name="quote2_title", field_type=InstanceFieldType.TEXT, required=False, description="Customer title"),
         ],
@@ -373,14 +423,14 @@ Key Message 3
         template_id=press_release_template.id,
         section_name="Quote 1",
         section_order=4,
-        element_ids=[element_ids["Principles"]]
+        element_ids=[]  # Quotes come from instance_data, not UNF
     ))
 
     template_service.create_section_binding(SectionBindingCreate(
         template_id=press_release_template.id,
         section_name="Quote 2",
         section_order=5,
-        element_ids=[element_ids["Problem"]]
+        element_ids=[]  # Quotes come from instance_data, not UNF
     ))
 
     template_service.create_section_binding(SectionBindingCreate(

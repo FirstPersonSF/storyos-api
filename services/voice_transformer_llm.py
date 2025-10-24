@@ -5,6 +5,7 @@ Uses Claude API to apply brand voice rules intelligently with context-awareness.
 Supports transformation profiles for section-aware transformation strategies.
 """
 from typing import Dict, List, Any, Optional
+import re
 from services.llm_client import get_llm_client
 from services.transformation_profiles import TransformationProfiles
 
@@ -15,12 +16,99 @@ class LLMVoiceTransformer:
     def __init__(self):
         self.llm_client = get_llm_client()
 
+    def _extract_meta_commentary(self, content: str) -> tuple[str, str]:
+        """
+        Extract meta-commentary from LLM response, separating it from the actual content.
+
+        Returns:
+            tuple: (cleaned_content, commentary)
+                - cleaned_content: The transformed content without meta-commentary
+                - commentary: The extracted meta-commentary for reference
+        """
+        lines = content.split('\n')
+        content_lines = []
+        commentary_lines = []
+        skip_mode = False
+        commentary_started = False
+
+        for line in lines:
+            line_lower = line.lower().strip()
+
+            # Detect meta-commentary headers
+            if any(phrase in line_lower for phrase in [
+                "here's the transformed content",
+                "transformed content:",
+                "key transformation notes",
+                "key adjustments:",
+                "key adjustments made",
+                "key observations:",
+                "note:",
+                "notes on transformation:",
+                "the transformation maintains",
+                "the transformation emphasizes",
+                "the transformation elevates",
+                "the transformed text",
+                "updated version:",
+                "strategic release",
+                "this transformation",
+                "aligned with the specified brand voice"
+            ]):
+                skip_mode = True
+                commentary_started = True
+                commentary_lines.append(line)
+                continue
+
+            # If we see a bullet/dash at start after meta-commentary header, it's commentary
+            if skip_mode and (line_lower.startswith('*') or line_lower.startswith('-') or line_lower.startswith('•')):
+                commentary_lines.append(line)
+                continue
+
+            # Exit skip mode if we see substantial content again
+            if skip_mode and len(line.strip()) > 50 and not commentary_started:
+                skip_mode = False
+
+            if skip_mode or commentary_started:
+                commentary_lines.append(line)
+            else:
+                content_lines.append(line)
+
+        cleaned_content = '\n'.join(content_lines).strip()
+
+        # Also check for commentary at the end (common pattern)
+        paragraphs = cleaned_content.split('\n\n')
+        while paragraphs and len(paragraphs) > 1:
+            last_para = paragraphs[-1].lower()
+            if any(phrase in last_para for phrase in [
+                'note:',
+                'notes on transformation',
+                'the transformation',
+                'the transformed text',
+                'key adjustments',
+                'key adjustments made',
+                'key observations',
+                'this maintains',
+                'this elevates',
+                'aligned with the specified brand voice',
+                'incorporated brand voice',
+                'maintained',
+                'preserved',
+                'used more'
+            ]):
+                commentary_lines.append(paragraphs.pop())
+            else:
+                break
+
+        cleaned_content = '\n\n'.join(paragraphs).strip()
+        commentary = '\n'.join(commentary_lines).strip()
+
+        return cleaned_content, commentary
+
     def apply_voice(
         self,
         content: str,
         voice_config: Dict[str, Any],
         use_llm: bool = True
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Apply voice transformation using LLM (legacy method)
 
@@ -35,14 +123,14 @@ class LLMVoiceTransformer:
             use_llm: If False, skip LLM (for testing/comparison)
 
         Returns:
-            Transformed content
+            tuple: (transformed_content, transformation_notes)
         """
         if not use_llm:
             # Fallback: return original (could call old regex transformer)
-            return content
+            return content, ""
 
         if not content or not content.strip():
-            return content
+            return content, ""
 
         # Build comprehensive prompt from all voice guidelines
         prompt = self._build_transformation_prompt(voice_config, content)
@@ -53,11 +141,33 @@ class LLMVoiceTransformer:
                 prompt=prompt,
                 temperature=0.0  # Deterministic for consistency
             )
-            return transformed.strip()
+
+            # Parse JSON response
+            import json
+            try:
+                # Clean up response (remove markdown code blocks if present)
+                json_str = transformed.strip()
+                if json_str.startswith('```json'):
+                    json_str = json_str[7:]  # Remove ```json
+                if json_str.startswith('```'):
+                    json_str = json_str[3:]   # Remove ```
+                if json_str.endswith('```'):
+                    json_str = json_str[:-3]  # Remove trailing ```
+                json_str = json_str.strip()
+
+                result = json.loads(json_str)
+                return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
+            except json.JSONDecodeError as json_err:
+                print(f"JSON parsing error: {json_err}")
+                print(f"Raw response: {transformed[:500]}")  # Log first 500 chars
+                # Fallback: try the old extraction method
+                cleaned, commentary = self._extract_meta_commentary(transformed)
+                return cleaned.strip(), commentary
+
         except Exception as e:
             # On error, return original content with warning logged
             print(f"Voice transformation error: {e}")
-            return content
+            return content, ""
 
     def apply_voice_with_profile(
         self,
@@ -68,7 +178,7 @@ class LLMVoiceTransformer:
         story_model_override: Optional[str] = None,
         template_override: Optional[str] = None,
         use_llm: bool = True
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Apply voice transformation using section-aware transformation profile.
 
@@ -85,13 +195,13 @@ class LLMVoiceTransformer:
             use_llm: If False, skip LLM (for testing/comparison)
 
         Returns:
-            Transformed content
+            tuple: (transformed_content, transformation_notes)
         """
         if not use_llm:
-            return content
+            return content, ""
 
         if not content or not content.strip():
-            return content
+            return content, ""
 
         # Get transformation profile for this section
         profile = TransformationProfiles.get_profile_for_section(
@@ -120,11 +230,12 @@ class LLMVoiceTransformer:
                             prompt=prompt,
                             temperature=0.0
                         )
-                        return transformed.strip()
+                        cleaned, commentary = self._extract_meta_commentary(transformed)
+                        return cleaned.strip(), commentary
                     except Exception as e:
                         print(f"Voice transformation error: {e}")
-                        return content
-            return content
+                        return content, ""
+            return content, ""
 
         # Build profile-specific prompt
         prompt = TransformationProfiles.build_profile_prompt(
@@ -140,11 +251,33 @@ class LLMVoiceTransformer:
                 prompt=prompt,
                 temperature=0.0  # Deterministic for consistency
             )
-            return transformed.strip()
+
+            # Parse JSON response
+            import json
+            try:
+                # Clean up response (remove markdown code blocks if present)
+                json_str = transformed.strip()
+                if json_str.startswith('```json'):
+                    json_str = json_str[7:]  # Remove ```json
+                if json_str.startswith('```'):
+                    json_str = json_str[3:]   # Remove ```
+                if json_str.endswith('```'):
+                    json_str = json_str[:-3]  # Remove trailing ```
+                json_str = json_str.strip()
+
+                result = json.loads(json_str)
+                return result.get('transformed_content', '').strip(), result.get('transformation_notes', '')
+            except json.JSONDecodeError as json_err:
+                print(f"JSON parsing error: {json_err}")
+                print(f"Raw response: {transformed[:500]}")  # Log first 500 chars
+                # Fallback: try the old extraction method
+                cleaned, commentary = self._extract_meta_commentary(transformed)
+                return cleaned.strip(), commentary
+
         except Exception as e:
             # On error, return original content with warning logged
             print(f"Voice transformation error: {e}")
-            return content
+            return content, ""
 
     def _build_transformation_prompt(
         self,
@@ -208,15 +341,22 @@ class LLMVoiceTransformer:
             "\n## IMPORTANT RULES\n"
             "- Only replace pronouns when they clearly refer to the company (not when part of other words)\n"
             "- Preserve all markdown formatting (bold, italics, line breaks, numbered lists, etc.)\n"
-            "- Maintain the natural flow and readability\n"
-            "- Do NOT add explanations, preambles, or meta-commentary\n"
-            "- Return ONLY the transformed content"
+            "- Maintain the natural flow and readability"
         )
 
         # Content to transform
         sections.append(f"\n## CONTENT TO TRANSFORM\n\n{content}")
 
-        sections.append("\n## TRANSFORMED CONTENT")
+        # JSON output format
+        sections.append(
+            "\n## OUTPUT FORMAT\n"
+            "Return your response as valid JSON with this exact structure:\n"
+            "{\n"
+            '  "transformed_content": "The transformed content here...",\n'
+            '  "transformation_notes": "Brief explanation of key changes made (e.g., tone adjustments, word replacements, etc.)"\n'
+            "}\n\n"
+            "IMPORTANT: Return ONLY the JSON object, no additional text before or after."
+        )
 
         return '\n'.join(sections)
 

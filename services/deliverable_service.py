@@ -67,9 +67,10 @@ class DeliverableService:
         # Assemble content from Elements
         element_versions = {}
         rendered_content = {}
+        transformation_notes = {}
 
-        for binding in template.section_bindings:
-            section_content = self._assemble_section_content(
+        for i, binding in enumerate(template.section_bindings):
+            section_content, section_notes = self._assemble_section_content(
                 binding,
                 deliverable_data.instance_data,
                 story_model,
@@ -77,11 +78,20 @@ class DeliverableService:
             )
             rendered_content[binding.section_name] = section_content
 
+            # Store transformation notes if present
+            if section_notes:
+                transformation_notes[binding.section_name] = section_notes
+
             # Track element versions used
             for elem_id in binding.element_ids:
                 element = self.unf_service.get_element(elem_id)
                 if element:
                     element_versions[str(elem_id)] = element.version
+
+        # Merge transformation_notes into metadata
+        metadata = deliverable_data.metadata.copy() if deliverable_data.metadata else {}
+        if transformation_notes:
+            metadata['transformation_notes'] = transformation_notes
 
         # Prepare deliverable data
         data = {
@@ -96,7 +106,7 @@ class DeliverableService:
             "element_versions": json.dumps(element_versions),
             "rendered_content": json.dumps(rendered_content),
             "validation_log": json.dumps([]),
-            "metadata": json.dumps(deliverable_data.metadata)
+            "metadata": json.dumps(metadata)
         }
 
         # Create deliverable
@@ -121,11 +131,14 @@ class DeliverableService:
         instance_data: Dict[str, Any],
         story_model,
         voice
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Assemble content for a section from bound Elements
 
         Phase 2: Uses story model strategies and voice transformation
+
+        Returns:
+            tuple: (section_content, transformation_notes)
         """
         # Get bound elements
         bound_elements = []
@@ -135,7 +148,7 @@ class DeliverableService:
                 bound_elements.append(element)
 
         if not bound_elements:
-            return ""
+            return "", ""
 
         # Get section strategy from story model (if available)
         section_strategy = {}
@@ -153,6 +166,9 @@ class DeliverableService:
             bound_elements=bound_elements,
             instance_data=instance_data
         )
+
+        # Track transformation notes
+        transformation_notes = ""
 
         # Phase 2: Apply voice transformation (LLM-based)
         if voice:
@@ -178,7 +194,7 @@ class DeliverableService:
             # Use LLM transformer with profile-aware transformation (fallback to regex if LLM fails)
             try:
                 # Pass section name and constraints for profile-aware transformation
-                assembled_content = self.llm_voice_transformer.apply_voice_with_profile(
+                assembled_content, transformation_notes = self.llm_voice_transformer.apply_voice_with_profile(
                     content=assembled_content,
                     voice_config=voice_config,
                     section_name=binding.section_name,
@@ -192,8 +208,9 @@ class DeliverableService:
                         assembled_content,
                         voice.rules
                     )
+                transformation_notes = f"LLM transformation failed: {e}"
 
-        return assembled_content
+        return assembled_content, transformation_notes
 
     def get_deliverable(self, deliverable_id: UUID) -> Optional[Deliverable]:
         """Get a Deliverable by ID"""
@@ -260,7 +277,13 @@ class DeliverableService:
         return versions
 
     def _check_for_updates(self, deliverable: Deliverable) -> List[ImpactAlert]:
-        """Check if any Elements used by this Deliverable have been updated"""
+        """
+        Check if any Elements used by this Deliverable have been updated
+
+        Returns alerts with two status types:
+        - 'update_available': Element has newer APPROVED version (safe to refresh)
+        - 'update_pending': Element has newer DRAFT version (should NOT refresh until approved)
+        """
         alerts = []
 
         for elem_id_str, used_version in deliverable.element_versions.items():
@@ -270,27 +293,64 @@ class DeliverableService:
             if not used_element:
                 continue
 
-            # Check if this element has been superseded
-            if used_element.status == "superseded":
-                # Find the newer version(s) - look for elements with same name
-                all_elements = self.unf_service.list_elements()
-                newer_versions = [
-                    e for e in all_elements
-                    if e.name == used_element.name
-                    and e.status == "approved"
-                    and e.prev_element_id == elem_id
-                ]
+            # Find all newer versions of this element (by name)
+            all_elements = self.unf_service.list_elements()
 
-                for newer in newer_versions:
-                    alerts.append(ImpactAlert(
-                        element_id=elem_id,
-                        element_name=used_element.name,
-                        old_version=used_version,
-                        new_version=newer.version,
-                        status="update_available"
-                    ))
+            # Build version chain from used element forward
+            newer_approved = []
+            newer_draft = []
+
+            for e in all_elements:
+                if e.name == used_element.name and e.id != used_element.id:
+                    # Check if this is a newer version (compare version strings)
+                    if self._is_newer_version(e.version, used_version):
+                        if e.status == "approved":
+                            newer_approved.append(e)
+                        elif e.status == "draft":
+                            newer_draft.append(e)
+
+            # Create alerts for approved updates (safe to refresh)
+            for newer in newer_approved:
+                alerts.append(ImpactAlert(
+                    element_id=elem_id,
+                    element_name=used_element.name,
+                    old_version=used_version,
+                    new_version=newer.version,
+                    status="update_available"
+                ))
+
+            # Create alerts for draft updates (NOT safe to refresh)
+            for newer in newer_draft:
+                alerts.append(ImpactAlert(
+                    element_id=elem_id,
+                    element_name=used_element.name,
+                    old_version=used_version,
+                    new_version=newer.version,
+                    status="update_pending"
+                ))
 
         return alerts
+
+    def _is_newer_version(self, version_a: str, version_b: str) -> bool:
+        """
+        Compare version strings (e.g., "1.1" > "1.0")
+
+        Returns True if version_a is newer than version_b
+        """
+        try:
+            # Split version strings into parts and compare
+            parts_a = [int(x) for x in version_a.split('.')]
+            parts_b = [int(x) for x in version_b.split('.')]
+
+            # Pad shorter version with zeros
+            max_len = max(len(parts_a), len(parts_b))
+            parts_a.extend([0] * (max_len - len(parts_a)))
+            parts_b.extend([0] * (max_len - len(parts_b)))
+
+            return parts_a > parts_b
+        except (ValueError, AttributeError):
+            # If version comparison fails, treat as not newer
+            return False
 
     def update_deliverable(
         self,
@@ -304,7 +364,12 @@ class DeliverableService:
         marks the old version as 'superseded', and links them via prev_deliverable_id.
         This provides non-destructive version history similar to UNF Elements.
 
-        Re-renders content if voice_id, instance_data, or story_model_id changes
+        Re-renders content if template_id, voice_id, instance_data, or story_model_id changes
+
+        Story Model Switching (Test 05):
+        - If story_model_id changes, template_id MUST also be provided
+        - The new template must use the new Story Model
+        - Section reflow happens automatically via the new template's bindings
         """
         deliverable = self.get_deliverable(deliverable_id)
         if not deliverable:
@@ -312,14 +377,43 @@ class DeliverableService:
 
         data = update_data.model_dump(exclude_unset=True, exclude_none=True)
 
+        # Validate Story Model and Template compatibility
+        if 'story_model_id' in data and 'template_id' not in data:
+            raise ValueError(
+                "When changing story_model_id, you must also provide a template_id "
+                "that uses the new Story Model. Templates and Story Models are tightly coupled."
+            )
+
+        if 'template_id' in data:
+            new_template = self.template_service.get_template_with_bindings(data['template_id'])
+            if not new_template:
+                raise ValueError(f"Template {data['template_id']} not found")
+
+            # If story_model_id is explicitly provided, validate it matches the template
+            if 'story_model_id' in data:
+                if new_template.story_model_id != data['story_model_id']:
+                    raise ValueError(
+                        f"Template {new_template.id} uses Story Model {new_template.story_model_id}, "
+                        f"but you requested Story Model {data['story_model_id']}. "
+                        f"Template and Story Model must match."
+                    )
+            # If story_model_id not provided, inherit from new template
+            else:
+                data['story_model_id'] = new_template.story_model_id
+
         # Check if we need to re-render
-        needs_rerender = 'voice_id' in data or 'instance_data' in data or 'story_model_id' in data
+        needs_rerender = (
+            'template_id' in data or
+            'voice_id' in data or
+            'instance_data' in data or
+            'story_model_id' in data
+        )
 
         # Prepare new deliverable data (start with existing values)
         new_deliverable_data = {
             "name": data.get('name', deliverable.name),
-            "template_id": deliverable.template_id,
-            "template_version": deliverable.template_version,
+            "template_id": data.get('template_id', deliverable.template_id),
+            "template_version": deliverable.template_version,  # Will be updated if template changes
             "story_model_id": data.get('story_model_id', deliverable.story_model_id),
             "voice_id": data.get('voice_id', deliverable.voice_id),
             "voice_version": deliverable.voice_version,
@@ -334,8 +428,13 @@ class DeliverableService:
         }
 
         if needs_rerender:
-            # Get template and re-render with new voice/instance data/story model
-            template = self.template_service.get_template_with_bindings(deliverable.template_id)
+            # Get template (use new template if provided, otherwise existing)
+            template = self.template_service.get_template_with_bindings(
+                new_deliverable_data['template_id']
+            )
+
+            # Update template version
+            new_deliverable_data['template_version'] = template.version
 
             # Use new voice or keep existing
             voice_id = new_deliverable_data['voice_id']
@@ -405,16 +504,38 @@ class DeliverableService:
 
         return self.get_deliverable(new_deliverable_id)
 
-    def refresh_deliverable(self, deliverable_id: UUID) -> Deliverable:
+    def refresh_deliverable(self, deliverable_id: UUID, force: bool = False) -> Deliverable:
         """
         Refresh a Deliverable with latest element versions
 
         Re-renders content using the most recent approved versions
         of all elements used in the deliverable
+
+        Args:
+            deliverable_id: ID of deliverable to refresh
+            force: If False (default), blocks refresh if any draft element updates exist.
+                   If True, refreshes anyway (use with caution).
+
+        Raises:
+            ValueError: If deliverable not found or if draft elements exist (and force=False)
         """
         deliverable = self.get_deliverable(deliverable_id)
         if not deliverable:
             raise ValueError(f"Deliverable {deliverable_id} not found")
+
+        # Check for draft element updates (blocking condition)
+        if not force:
+            alerts = self._check_for_updates(deliverable)
+            draft_alerts = [a for a in alerts if a.status == "update_pending"]
+
+            if draft_alerts:
+                # Build error message with details
+                element_names = ', '.join([a.element_name for a in draft_alerts])
+                raise ValueError(
+                    f"Cannot refresh deliverable: {len(draft_alerts)} element(s) have draft updates "
+                    f"that must be approved first: {element_names}. "
+                    f"Use force=True to override (not recommended)."
+                )
 
         # Get template
         template = self.template_service.get_template_with_bindings(deliverable.template_id)

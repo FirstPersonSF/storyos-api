@@ -29,14 +29,20 @@ class StoryModelComposer:
         Returns:
             Composed section content
         """
-        if not bound_elements:
-            return ""
-
         # Get extraction strategy
         strategy = section_strategy.get('extraction_strategy', 'full_content')
 
         # Apply strategy
-        if strategy == 'key_message':
+        if strategy == 'field_extraction':
+            # NEW: Extract specific fields from structured element content
+            content = self._extract_field_from_element(bound_elements, section_strategy)
+        elif strategy == 'instance_data':
+            # NEW: Compose from instance_data fields only
+            content = self._compose_from_instance_data(instance_data, section_strategy)
+        elif strategy == 'composed':
+            # NEW: LLM composes from multiple sources
+            content = self._compose_with_llm(bound_elements, instance_data, section_strategy)
+        elif strategy == 'key_message':
             content = self._extract_key_message(bound_elements, section_strategy)
         elif strategy == 'five_ws':
             content = self._extract_five_ws(bound_elements, instance_data)
@@ -48,9 +54,220 @@ class StoryModelComposer:
             content = self._extract_full_content(bound_elements, instance_data)
         else:
             # Default: concatenate all elements
-            content = self._extract_full_content(bound_elements, instance_data)
+            content = self._extract_full_content(bound_elements, instance_data) if bound_elements else ""
 
         return content
+
+    def _extract_field_from_element(
+        self,
+        elements: List[UNFElement],
+        strategy: Dict[str, Any]
+    ) -> str:
+        """
+        Extract specific fields from structured element content.
+
+        Parses element content to extract named fields like:
+        - Headline: Transform data into real-world outcomes
+        - Proof: Our Reality Technology connects...
+        - Benefit: Enables industries to act faster...
+
+        Args:
+            elements: List of bound UNF elements
+            strategy: Strategy containing 'field_path' and optional 'selection_count'
+
+        Returns:
+            Extracted field content (or multiple if selection_count > 1)
+        """
+        if not elements:
+            return ""
+
+        element = elements[0]
+        content = element.content or ""
+        field_path = strategy.get('field_path', 'headline')
+        selection_count = strategy.get('selection_count', 1)
+
+        import re
+
+        # Parse content into "Key Message N" blocks
+        # Split on "Key Message N" pattern
+        blocks = re.split(r'(?=Key Message \d+)', content)
+        blocks = [b.strip() for b in blocks if b.strip()]
+
+        extracted_values = []
+
+        for block in blocks:
+            # Find lines starting with "{field_path}:"
+            pattern = rf'^{re.escape(field_path)}:\s*(.+)$'
+            match = re.search(pattern, block, re.IGNORECASE | re.MULTILINE)
+
+            if match:
+                field_value = match.group(1).strip()
+                extracted_values.append(field_value)
+
+                # Stop if we have enough
+                if len(extracted_values) >= selection_count:
+                    break
+
+        # Return results
+        if not extracted_values:
+            return ""
+
+        if selection_count == 1:
+            return extracted_values[0]
+        else:
+            # Return as markdown list
+            return '\n'.join([f"- {value}" for value in extracted_values])
+
+    def _compose_from_instance_data(
+        self,
+        instance_data: Dict[str, Any],
+        strategy: Dict[str, Any]
+    ) -> str:
+        """
+        Compose section content from instance_data fields only.
+
+        Used for quotes and other user-provided content that doesn't
+        come from UNF elements.
+
+        Args:
+            instance_data: Instance-specific data
+            strategy: Strategy containing 'instance_fields' list
+
+        Returns:
+            Formatted content from instance fields
+
+        Example - Quote formatting:
+            instance_fields = ['quote1_text', 'quote1_speaker', 'quote1_title']
+            Output: "{quote1_text}"
+
+                    — {quote1_speaker}, {quote1_title}
+        """
+        instance_fields = strategy.get('instance_fields', [])
+
+        if not instance_fields:
+            return ""
+
+        # Extract values from instance_data
+        values = {}
+        for field_name in instance_fields:
+            values[field_name] = instance_data.get(field_name, '')
+
+        # Detect quote pattern (quote*_text, quote*_speaker, quote*_title)
+        quote_text_fields = [f for f in instance_fields if f.endswith('_text')]
+
+        if quote_text_fields:
+            # This is a quote - format with attribution
+            quote_text_field = quote_text_fields[0]
+            speaker_field = quote_text_field.replace('_text', '_speaker')
+            title_field = quote_text_field.replace('_text', '_title')
+
+            quote_text = values.get(quote_text_field, '')
+            speaker = values.get(speaker_field, '')
+            title = values.get(title_field, '')
+
+            if not quote_text:
+                return ""
+
+            # Format: "{quote}"
+            #
+            #         — Speaker, Title
+            parts = [f'"{quote_text}"']
+
+            if speaker and title:
+                parts.append(f"\n\n— {speaker}, {title}")
+            elif speaker:
+                parts.append(f"\n\n— {speaker}")
+
+            return ''.join(parts)
+
+        # Non-quote: just concatenate values
+        return '\n'.join([v for v in values.values() if v])
+
+    def _compose_with_llm(
+        self,
+        elements: List[UNFElement],
+        instance_data: Dict[str, Any],
+        strategy: Dict[str, Any]
+    ) -> str:
+        """
+        Use LLM to compose content from multiple sources.
+
+        Combines instance_data fields and UNF element content,
+        then uses LLM to create a cohesive narrative.
+
+        Args:
+            elements: Bound UNF elements
+            instance_data: Instance-specific data
+            strategy: Strategy containing 'composition_sources' list
+
+        Returns:
+            LLM-composed content
+
+        Example - Press Release Lede:
+            composition_sources = [
+                'instance_data.who',
+                'instance_data.what',
+                'instance_data.when',
+                'instance_data.where',
+                'instance_data.why',
+                'element.Vision Statement'
+            ]
+        """
+        composition_sources = strategy.get('composition_sources', [])
+
+        if not composition_sources:
+            return ""
+
+        # Build context from sources
+        context = {}
+
+        for source in composition_sources:
+            if source.startswith('instance_data.'):
+                # Extract from instance_data
+                field_name = source.replace('instance_data.', '')
+                context[field_name] = instance_data.get(field_name, '')
+            elif source.startswith('element.'):
+                # Extract from elements by name
+                element_name = source.replace('element.', '')
+                matching_elements = [e for e in elements if e.name == element_name]
+                if matching_elements:
+                    context[element_name] = matching_elements[0].content
+
+        # For now, use simple template-based composition
+        # TODO: Replace with actual LLM composition
+
+        # Check if this is a Lede composition (has 5 W's)
+        if all(k in context for k in ['who', 'what', 'when', 'where', 'why']):
+            # Compose press release lede
+            who = context.get('who', '')
+            what = context.get('what', '')
+            when = context.get('when', '')
+            where = context.get('where', '')
+            why = context.get('why', '')
+            vision = context.get('Vision Statement', '')
+
+            # Format: [Location], [Date] — [Who] [what] [why]. [Vision]
+            lede_parts = []
+
+            if where and when:
+                lede_parts.append(f"{where}, {when} — {who} {what}")
+            elif when:
+                lede_parts.append(f"{when} — {who} {what}")
+            else:
+                lede_parts.append(f"{who} {what}")
+
+            if why:
+                lede_parts[0] += f" {why}"
+
+            lede_parts[0] += "."
+
+            if vision:
+                lede_parts.append(f"\n\n{vision}")
+
+            return ' '.join(lede_parts)
+
+        # Default: concatenate all context values
+        return '\n\n'.join([str(v) for v in context.values() if v])
 
     def _extract_key_message(
         self,
@@ -60,7 +277,10 @@ class StoryModelComposer:
         """
         Extract key message for headlines
 
-        Strategy: Use first sentence, truncate to max_words
+        Strategy: Extract headline text from markdown or use first sentence
+        Handles formats like:
+        - **Headline**: <text>
+        - Plain text sentences
         """
         if not elements:
             return ""
@@ -68,9 +288,21 @@ class StoryModelComposer:
         # Use first element's content
         full_content = elements[0].content or ""
 
-        # Get first sentence
-        sentences = full_content.split('.')
-        headline = sentences[0].strip()
+        # Try to extract markdown headline pattern: **Headline**: <text>
+        import re
+        headline_match = re.search(r'\*\*Headline\*\*:\s*(.+?)(?:\n|$)', full_content, re.IGNORECASE)
+
+        if headline_match:
+            headline = headline_match.group(1).strip()
+            # Remove any trailing markdown or formatting
+            headline = re.sub(r'\*\*[^*]+\*\*:.*$', '', headline).strip()
+        else:
+            # Fallback: Get first sentence (split on period followed by space or newline)
+            sentences = re.split(r'\.\s+|\n\n', full_content)
+            headline = sentences[0].strip() if sentences else full_content.strip()
+
+            # Remove markdown formatting
+            headline = re.sub(r'\*\*([^*]+)\*\*', r'\1', headline)
 
         # Apply word limit
         max_words = strategy.get('max_words', 10)
