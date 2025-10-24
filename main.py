@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from api.routes import unf, voices, story_models, templates, deliverables
+from api.routes import unf, voices, story_models, templates, deliverables, debug
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +53,7 @@ app.include_router(voices.router)
 app.include_router(story_models.router)
 app.include_router(templates.router)
 app.include_router(deliverables.router)
+app.include_router(debug.router)
 
 
 @app.get("/")
