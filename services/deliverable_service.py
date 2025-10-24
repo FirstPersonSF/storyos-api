@@ -149,7 +149,8 @@ Respond with ONLY valid JSON in this exact format:
                 binding,
                 deliverable_data.instance_data,
                 story_model,
-                voice
+                voice,
+                template
             )
             rendered_content[binding.section_name] = section_content
 
@@ -214,7 +215,8 @@ Respond with ONLY valid JSON in this exact format:
         binding,
         instance_data: Dict[str, Any],
         story_model,
-        voice
+        voice,
+        template
     ) -> tuple[str, str]:
         """
         Assemble content for a section from bound Elements
@@ -555,11 +557,12 @@ Respond with ONLY valid JSON in this exact format:
             element_versions = {}
 
             for binding in template.section_bindings:
-                section_content = self._assemble_section_content(
+                section_content, section_notes = self._assemble_section_content(
                     binding,
                     instance_data,
                     story_model,
-                    voice
+                    voice,
+                    template
                 )
                 rendered_content[binding.section_name] = section_content
 
