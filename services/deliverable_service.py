@@ -686,7 +686,7 @@ Respond with ONLY valid JSON in this exact format:
 
         for binding in template.section_bindings:
             # Find latest approved versions of elements bound to this section
-            latest_elements = []
+            latest_element_ids = []
 
             for elem_id in binding.element_ids:
                 # Get current element
@@ -706,37 +706,25 @@ Respond with ONLY valid JSON in this exact format:
                             latest_approved = elem
 
                 if latest_approved:
-                    latest_elements.append(latest_approved)
+                    latest_element_ids.append(latest_approved.id)
                     element_versions[str(latest_approved.id)] = latest_approved.version
 
-            # Phase 2: Use story model composer and voice transformer
-            if latest_elements:
-                # Get section strategy
-                section_strategy = {}
-                if story_model and hasattr(story_model, 'section_strategies') and story_model.section_strategies:
-                    section_strategy = story_model.section_strategies.get(binding.section_name, {})
+            # Create a modified binding with latest element IDs for refresh
+            from copy import copy
+            updated_binding = copy(binding)
+            updated_binding.element_ids = latest_element_ids
 
-                if not section_strategy:
-                    section_strategy = {'extraction_strategy': 'full_content'}
+            # Use the same method as create_deliverable to handle both element-based
+            # and instance-field-based sections (e.g., Press Release quotes)
+            section_content, _ = self._assemble_section_content(
+                updated_binding,
+                deliverable.instance_data,
+                story_model,
+                voice,
+                template
+            )
 
-                # Compose section
-                section_content = self.story_model_composer.compose_section(
-                    section_name=binding.section_name,
-                    section_strategy=section_strategy,
-                    bound_elements=latest_elements,
-                    instance_data=deliverable.instance_data
-                )
-
-                # Apply voice transformation
-                if voice and hasattr(voice, 'rules') and voice.rules:
-                    section_content = self.voice_transformer.apply_voice(
-                        section_content,
-                        voice.rules
-                    )
-
-                rendered_content[binding.section_name] = section_content
-            else:
-                rendered_content[binding.section_name] = ""
+            rendered_content[binding.section_name] = section_content
 
         # Update deliverable with new versions and content
         data = {
