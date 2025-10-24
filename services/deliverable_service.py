@@ -531,10 +531,14 @@ Respond with ONLY valid JSON in this exact format:
             # Use new voice or keep existing
             voice_id = new_deliverable_data['voice_id']
             voice = self.voice_service.get_voice(voice_id)
+            if not voice:
+                raise ValueError(f"Brand Voice {voice_id} not found")
 
             # Use new story model or keep existing
             story_model_id = new_deliverable_data['story_model_id']
             story_model = self.story_model_service.get_story_model(story_model_id)
+            if not story_model:
+                raise ValueError(f"Story Model {story_model_id} not found")
 
             # Use new instance data or keep existing
             instance_data = new_deliverable_data['instance_data']
