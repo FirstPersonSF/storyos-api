@@ -57,9 +57,10 @@ class TransformationProfiles:
                 "Transform this content to match the brand voice fully. "
                 "CRITICAL: You must preserve the exact length constraint (max words/characters). "
                 "The meaning must stay consistent - do not add or remove information. "
-                "Apply voice transformation within these strict boundaries."
+                "Apply voice transformation within these strict boundaries. "
+                "Follow ALL validation rules provided in the constraints section."
             ),
-            "preserve_constraints": ["length", "meaning"],
+            "preserve_constraints": ["length", "meaning", "validation_rules"],
             "apply_voice": True
         },
 
@@ -215,6 +216,11 @@ class TransformationProfiles:
                 sections.append(f"- Format: {constraints['format']}")
             if "required_elements" in constraints:
                 sections.append(f"- Required elements: {', '.join(constraints['required_elements'])}")
+            if "validation_rules" in constraints:
+                sections.append("\n## CRITICAL Validation Rules")
+                sections.append("The transformed content MUST pass these validation checks:")
+                for rule in constraints["validation_rules"]:
+                    sections.append(f"- {rule}")
             sections.append("")
 
         # Apply voice only if profile allows it

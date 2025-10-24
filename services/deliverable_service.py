@@ -43,6 +43,81 @@ class DeliverableService:
         self.llm_voice_transformer = get_voice_transformer()  # LLM-based (primary)
         self.story_model_composer = StoryModelComposer()
 
+        # Validation rules for Press Release sections (to be included in LLM prompts)
+        self.press_release_validation_rules = {
+            'Headline': [
+                "Must be ≤10 words",
+                "MUST include a strong, present-tense action verb that clearly communicates what is being announced (examples: announces, launches, introduces, reveals, unveils, releases, optimizes, transforms, enables, empowers, drives, accelerates, etc.)"
+            ],
+            'Lede': [
+                "Must contain WHO (who is making the announcement)",
+                "Must contain WHAT (what is being announced)",
+                "Must contain WHEN (when is this happening)",
+                "Must contain WHERE (where is this relevant)",
+                "Must contain WHY (why does this matter)"
+            ],
+            'Key Facts': [
+                "Must include at least 3 bullet points/key messages"
+            ]
+        }
+
+    def _validate_headline_with_llm(self, headline: str) -> tuple[bool, Optional[str], Optional[str]]:
+        """
+        Use LLM to validate if headline contains an appropriate action verb for press releases.
+
+        Args:
+            headline: The headline text to validate
+
+        Returns:
+            tuple: (passed, verb_found, explanation)
+                - passed: True if validation passed
+                - verb_found: The action verb found (if any)
+                - explanation: Brief explanation of the validation result
+        """
+        from services.llm_client import get_llm_client
+
+        validation_prompt = f"""Analyze this press release headline for action verb requirements.
+
+Press release headlines should contain a strong, present-tense action verb that clearly communicates what is being announced (e.g., announces, launches, introduces, reveals, unveils, releases, optimizes, transforms, enables, etc.).
+
+Headline to analyze: "{headline}"
+
+Evaluate:
+1. Does it contain an appropriate action verb for a press release?
+2. If yes, what is the verb?
+3. Is the verb strong and announcement-oriented?
+
+Respond with ONLY valid JSON in this exact format:
+{{
+  "has_action_verb": true or false,
+  "verb_found": "the verb if present, or null",
+  "explanation": "brief explanation (1-2 sentences)"
+}}"""
+
+        try:
+            llm_client = get_llm_client()
+            response = llm_client.transform_content(
+                prompt=validation_prompt,
+                model="claude-3-5-haiku-20241022",
+                max_tokens=256,
+                temperature=0.0
+            )
+
+            # Parse JSON response
+            result = json.loads(response)
+
+            return (
+                result.get('has_action_verb', False),
+                result.get('verb_found'),
+                result.get('explanation', 'No explanation provided')
+            )
+
+        except Exception as e:
+            # Fallback: if LLM validation fails, log error and pass the validation
+            # to avoid blocking on transient API errors
+            print(f"LLM validation error: {e}")
+            return (True, None, f"LLM validation unavailable (error: {str(e)}). Allowing headline to pass.")
+
     def create_deliverable(self, deliverable_data: DeliverableCreate) -> Deliverable:
         """
         Create a new Deliverable from a Template
@@ -200,12 +275,17 @@ class DeliverableService:
 
             # Use LLM transformer with profile-aware transformation (fallback to regex if LLM fails)
             try:
+                # Inject validation rules for Press Release sections
+                constraints_with_validation = section_strategy.copy() if section_strategy else {}
+                if template.name == "Press Release" and binding.section_name in self.press_release_validation_rules:
+                    constraints_with_validation['validation_rules'] = self.press_release_validation_rules[binding.section_name]
+
                 # Pass section name and constraints for profile-aware transformation
                 assembled_content, transformation_notes = self.llm_voice_transformer.apply_voice_with_profile(
                     content=assembled_content,
                     voice_config=voice_config,
                     section_name=binding.section_name,
-                    constraints=section_strategy  # Section strategy includes max_words, format, etc.
+                    constraints=constraints_with_validation  # Section strategy includes max_words, format, validation_rules, etc.
                 )
                 # DEBUG: Log transformation results
                 print(f"[TRANSFORM] Section: {binding.section_name}")
@@ -812,28 +892,30 @@ class DeliverableService:
                 message=None
             ))
 
-        # Check for action verb (common action verbs in press releases)
-        action_verbs = [
-            'announces', 'launches', 'introduces', 'reveals', 'unveils', 'releases',
-            'delivers', 'achieves', 'expands', 'extends', 'partners', 'acquires',
-            'secures', 'wins', 'earns', 'receives', 'opens', 'closes', 'completes',
-            'establishes', 'creates', 'develops', 'builds', 'implements', 'deploys'
-        ]
-        has_action_verb = any(verb in headline.lower() for verb in action_verbs)
+        # Check for action verb using LLM-based validation
+        has_action_verb, verb_found, explanation = self._validate_headline_with_llm(headline)
 
         if not has_action_verb:
+            message = f"Headline should include a strong action verb. {explanation}"
+            if verb_found:
+                message = f"Found '{verb_found}' but {explanation}"
+
             validation_log.append(ValidationLogEntry(
                 timestamp=datetime.now(),
                 rule="press_release_headline_action_verb",
                 passed=False,
-                message="Headline must include an action verb (e.g., announces, launches, introduces)"
+                message=message
             ))
         else:
+            message = None
+            if verb_found:
+                message = f"Action verb '{verb_found}' found. {explanation}" if explanation else f"Action verb '{verb_found}' found."
+
             validation_log.append(ValidationLogEntry(
                 timestamp=datetime.now(),
                 rule="press_release_headline_action_verb",
                 passed=True,
-                message=None
+                message=message
             ))
 
         # Rule 2: Lede must contain who, what, when, where, and why
