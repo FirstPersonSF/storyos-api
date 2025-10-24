@@ -147,9 +147,6 @@ class DeliverableService:
             if element and element.status == "approved":
                 bound_elements.append(element)
 
-        if not bound_elements:
-            return "", ""
-
         # Get section strategy from story model (if available)
         section_strategy = {}
         if story_model and hasattr(story_model, 'section_strategies') and story_model.section_strategies:
@@ -171,7 +168,8 @@ class DeliverableService:
         transformation_notes = ""
 
         # Phase 2: Apply voice transformation (LLM-based)
-        if voice:
+        # Skip transformation if assembled_content is empty
+        if voice and assembled_content:
             # Build complete voice configuration for LLM (convert Pydantic models to dicts)
             def to_dict(obj):
                 """Convert Pydantic model or dict to dict"""
