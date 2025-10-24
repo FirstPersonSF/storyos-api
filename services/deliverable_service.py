@@ -93,6 +93,12 @@ class DeliverableService:
         if transformation_notes:
             metadata['transformation_notes'] = transformation_notes
 
+        # Add transformation metadata to indicate LLM method
+        metadata['transformation_metadata'] = {
+            'method': 'llm',
+            'transformer': 'voice_transformer_llm'
+        }
+
         # Prepare deliverable data
         data = {
             "name": deliverable_data.name,
