@@ -467,6 +467,13 @@ Respond with ONLY valid JSON in this exact format:
         if not deliverable:
             raise ValueError(f"Deliverable {deliverable_id} not found")
 
+        # Validate that deliverable has a name (data integrity check)
+        if not deliverable.name:
+            raise ValueError(
+                f"Deliverable {deliverable_id} has NULL name - this is a data integrity issue. "
+                f"Please delete this deliverable or fix the name in the database."
+            )
+
         data = update_data.model_dump(exclude_unset=True, exclude_none=True)
 
         # Validate Story Model and Template compatibility
