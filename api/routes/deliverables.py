@@ -29,6 +29,35 @@ def list_deliverables(
     return service.list_deliverables(status=status)
 
 
+@router.get("/with-alerts", response_model=List[DeliverableWithAlerts])
+def list_deliverables_with_alerts(
+    status: Optional[DeliverableStatus] = None,
+    service: DeliverableService = Depends(get_deliverable_service)
+):
+    """
+    List all Deliverables with impact alerts in a single efficient call
+
+    This is much more efficient than calling /{id}/with-alerts for each deliverable
+    as it uses a single database transaction and reuses element/template lookups.
+    """
+    try:
+        deliverables = service.list_deliverables(status=status)
+
+        # Get alerts for all deliverables in a single pass
+        deliverables_with_alerts = []
+        for deliverable in deliverables:
+            alerts = service._check_for_updates(deliverable)
+            deliverables_with_alerts.append(DeliverableWithAlerts(
+                **deliverable.model_dump(),
+                alerts=alerts,
+                has_updates=len(alerts) > 0
+            ))
+
+        return deliverables_with_alerts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading deliverables with alerts: {str(e)}")
+
+
 @router.post("", response_model=Deliverable, status_code=201)
 def create_deliverable(
     deliverable_data: DeliverableCreate,
