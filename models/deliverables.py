@@ -24,6 +24,8 @@ class DeliverableStatus(str, Enum):
 
 class ValidationLogEntry(BaseModel):
     """Single validation check result"""
+    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+
     timestamp: datetime
     rule: str = Field(..., description="Validation rule that was checked")
     passed: bool = Field(..., description="Did it pass?")
@@ -64,6 +66,7 @@ class DeliverableCreate(DeliverableBase):
 class DeliverableUpdate(BaseModel):
     """Update a Deliverable"""
     name: Optional[str] = None
+    template_id: Optional[UUID4] = None
     voice_id: Optional[UUID4] = None
     story_model_id: Optional[UUID4] = None
     instance_data: Optional[Dict[str, Any]] = None
