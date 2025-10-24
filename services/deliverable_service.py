@@ -372,14 +372,26 @@ Respond with ONLY valid JSON in this exact format:
 
     def _check_for_updates(self, deliverable: Deliverable) -> List[ImpactAlert]:
         """
-        Check if any Elements used by this Deliverable have been updated
+        Check if any Elements or Template used by this Deliverable have been updated
 
         Returns alerts with two status types:
-        - 'update_available': Element has newer APPROVED version (safe to refresh)
+        - 'update_available': Element/Template has newer APPROVED version (safe to refresh)
         - 'update_pending': Element has newer DRAFT version (should NOT refresh until approved)
         """
         alerts = []
 
+        # Check for template updates
+        current_template = self.template_service.get_template(deliverable.template_id)
+        if current_template and self._is_newer_version(current_template.version, deliverable.template_version):
+            alerts.append(ImpactAlert(
+                element_id=deliverable.template_id,
+                element_name=f"Template: {current_template.name}",
+                old_version=deliverable.template_version,
+                new_version=current_template.version,
+                status="update_available"
+            ))
+
+        # Check for element updates
         for elem_id_str, used_version in deliverable.element_versions.items():
             elem_id = UUID(elem_id_str)
             used_element = self.unf_service.get_element(elem_id)
