@@ -133,7 +133,32 @@ class TemplateService:
         self,
         binding_data: SectionBindingCreate
     ) -> SectionBinding:
-        """Create a section binding"""
+        """
+        Create a section binding
+
+        Validates that all elements have approved versions before binding.
+        Draft-only elements cannot be bound to templates.
+        """
+        # Validate element_ids - ensure all have approved versions
+        for elem_id in binding_data.element_ids:
+            element = self.unf_service.get_element(elem_id)
+            if not element:
+                raise ValueError(f"Element {elem_id} not found")
+
+            # Check if this element has an approved version
+            all_elements = self.unf_service.list_elements()
+            has_approved = any(
+                e.name == element.name and e.status == "approved"
+                for e in all_elements
+            )
+
+            if not has_approved:
+                raise ValueError(
+                    f"Cannot bind element '{element.name}' (v{element.version}): "
+                    f"No approved version exists. "
+                    f"Please approve the element before binding to a template."
+                )
+
         data = binding_data.model_dump(exclude_unset=True)
 
         # Convert binding_rules to JSON

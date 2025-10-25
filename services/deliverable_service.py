@@ -1089,3 +1089,83 @@ Respond with ONLY valid JSON in this exact format:
                 passed=True,
                 message=None
             ))
+
+    def preview_deliverable_with_drafts(self, deliverable_id: UUID) -> Dict[str, Any]:
+        """
+        Preview deliverable with draft content
+
+        Returns rendered content using draft versions where available,
+        without modifying the actual deliverable.
+
+        Returns:
+            Dict with:
+            - deliverable_id: The deliverable ID
+            - preview_rendered_content: Content with drafts applied
+            - original_rendered_content: Current deliverable content
+            - preview_note: Info message
+            - draft_elements_used: List of element names that have drafts
+        """
+        deliverable = self.get_deliverable(deliverable_id)
+        if not deliverable:
+            raise ValueError(f"Deliverable {deliverable_id} not found")
+
+        # Get template, voice, and story model
+        template = self.template_service.get_template_with_bindings(deliverable.template_id)
+        voice = self.voice_service.get_voice(deliverable.voice_id)
+        story_model = self.story_model_service.get_story_model(deliverable.story_model_id)
+
+        # Track which elements have drafts
+        draft_elements_used = []
+        preview_rendered_content = {}
+
+        for binding in template.section_bindings:
+            preview_element_ids = []
+
+            for elem_id in binding.element_ids:
+                current_element = self.unf_service.get_element(elem_id)
+                if not current_element:
+                    preview_element_ids.append(elem_id)
+                    continue
+
+                # Find latest draft with same name
+                all_elements = self.unf_service.list_elements()
+                latest_draft = None
+                highest_version = "0.0"
+
+                for elem in all_elements:
+                    if (elem.name == current_element.name and
+                        elem.status == "draft" and
+                        self._is_newer_version(elem.version, highest_version)):
+                        highest_version = elem.version
+                        latest_draft = elem
+
+                # Use draft if exists, otherwise use current
+                if latest_draft:
+                    preview_element_ids.append(latest_draft.id)
+                    draft_elements_used.append(f"{current_element.name} (v{latest_draft.version})")
+                else:
+                    preview_element_ids.append(elem_id)
+
+            # Create temporary binding with preview element IDs
+            from copy import copy
+            preview_binding = copy(binding)
+            preview_binding.element_ids = preview_element_ids
+
+            # Render section with preview elements
+            section_content, _ = self._assemble_section_content(
+                preview_binding,
+                deliverable.instance_data,
+                story_model,
+                voice,
+                template
+            )
+
+            preview_rendered_content[binding.section_name] = section_content
+
+        return {
+            "deliverable_id": str(deliverable_id),
+            "preview_rendered_content": preview_rendered_content,
+            "original_rendered_content": deliverable.rendered_content,
+            "draft_elements_used": draft_elements_used,
+            "preview_note": "This is a preview with draft content. Changes are not saved to the deliverable."
+        }

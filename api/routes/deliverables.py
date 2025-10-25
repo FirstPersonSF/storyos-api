@@ -182,3 +182,34 @@ def refresh_deliverable(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error refreshing deliverable: {str(e)}")
+
+
+@router.post("/{deliverable_id}/preview")
+def preview_deliverable_with_drafts(
+    deliverable_id: UUID,
+    service: DeliverableService = Depends(get_deliverable_service)
+):
+    """
+    Preview deliverable with draft element versions
+
+    Temporarily renders the deliverable using draft versions of elements
+    where drafts exist. Does not save changes to database.
+
+    Returns the same structure as a regular deliverable, but with
+    rendered_content showing what it would look like with drafts applied.
+
+    This implements the "Update Pending" → "Preview" workflow.
+
+    **Returns:**
+    - **deliverable_id**: The deliverable ID
+    - **preview_rendered_content**: Content with draft elements applied
+    - **original_rendered_content**: Current deliverable content
+    - **draft_elements_used**: List of elements that have draft versions
+    - **preview_note**: Info message
+    """
+    try:
+        return service.preview_deliverable_with_drafts(deliverable_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error previewing deliverable: {str(e)}")
