@@ -213,3 +213,26 @@ def preview_deliverable_with_drafts(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error previewing deliverable: {str(e)}")
+
+
+@router.delete("/{deliverable_id}", status_code=204)
+def delete_deliverable(
+    deliverable_id: UUID,
+    service: DeliverableService = Depends(get_deliverable_service)
+):
+    """
+    Delete a Deliverable
+
+    Permanently removes the deliverable from the database.
+    This action cannot be undone.
+    """
+    try:
+        deliverable = service.get_deliverable(deliverable_id)
+        if not deliverable:
+            raise HTTPException(status_code=404, detail=f"Deliverable {deliverable_id} not found")
+
+        service.storage.delete_one("deliverables", deliverable_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting deliverable: {str(e)}")
