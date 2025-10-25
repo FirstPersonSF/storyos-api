@@ -1116,7 +1116,10 @@ Respond with ONLY valid JSON in this exact format:
 
         # Track which elements have drafts
         draft_elements_used = []
-        preview_rendered_content = {}
+
+        # Start with a copy of the original rendered content
+        # Only override sections that have draft elements
+        preview_rendered_content = deliverable.rendered_content.copy()
 
         for binding in template.section_bindings:
             preview_element_ids = []
