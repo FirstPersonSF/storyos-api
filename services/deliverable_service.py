@@ -605,25 +605,34 @@ Respond with ONLY valid JSON in this exact format:
             # Use new instance data or keep existing
             instance_data = new_deliverable_data['instance_data']
 
-            # Re-render content with current element versions (Phase 2: with transformers)
+            # Re-render content with latest approved element versions (Phase 2: with transformers)
             rendered_content = {}
             element_versions = {}
 
             for binding in template.section_bindings:
+                # Resolve to latest approved versions of all elements in this binding
+                # This ensures updated deliverables always use current content
+                latest_element_ids = []
+
+                for elem_id in binding.element_ids:
+                    latest_element = self._get_latest_approved_element(elem_id)
+                    if latest_element:
+                        latest_element_ids.append(latest_element.id)
+                        element_versions[str(latest_element.id)] = latest_element.version
+
+                # Create a modified binding with latest element IDs
+                from copy import copy
+                updated_binding = copy(binding)
+                updated_binding.element_ids = latest_element_ids
+
                 section_content, section_notes = self._assemble_section_content(
-                    binding,
+                    updated_binding,
                     instance_data,
                     story_model,
                     voice,
                     template
                 )
                 rendered_content[binding.section_name] = section_content
-
-                # Track element versions used
-                for elem_id in binding.element_ids:
-                    element = self.unf_service.get_element(elem_id)
-                    if element:
-                        element_versions[str(elem_id)] = element.version
 
             # Update data with re-rendered content, new voice version, and element versions
             new_deliverable_data['rendered_content'] = rendered_content
