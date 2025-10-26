@@ -686,6 +686,10 @@ Respond with ONLY valid JSON in this exact format:
                     new_deliverable_id
                 )
 
+        # Automatically run validation on the new deliverable version
+        # This validates the new template's instance fields and story model constraints
+        self.validate_deliverable(new_deliverable_id)
+
         return self.get_deliverable(new_deliverable_id)
 
     def refresh_deliverable(self, deliverable_id: UUID, force: bool = False) -> Deliverable:
