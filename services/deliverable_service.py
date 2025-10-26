@@ -118,6 +118,37 @@ Respond with ONLY valid JSON in this exact format:
             print(f"LLM validation error: {e}")
             return (True, None, f"LLM validation unavailable (error: {str(e)}). Allowing headline to pass.")
 
+    def _get_latest_approved_element(self, elem_id: UUID) -> Optional[Any]:
+        """
+        Get the latest approved version of an element by looking up its name.
+
+        This ensures deliverables always use the most recent approved content,
+        not the specific version ID stored in the template binding.
+
+        Args:
+            elem_id: ID of any version of the element
+
+        Returns:
+            The latest approved version of that element (by name), or None if not found
+        """
+        # Get the element to find its name
+        element = self.unf_service.get_element(elem_id)
+        if not element:
+            return None
+
+        # Find latest approved version by name
+        all_elements = self.unf_service.list_elements()
+        latest_approved = None
+        latest_version = "0.0"
+
+        for elem in all_elements:
+            if elem.name == element.name and elem.status == "approved":
+                if elem.version > latest_version:
+                    latest_version = elem.version
+                    latest_approved = elem
+
+        return latest_approved
+
     def create_deliverable(self, deliverable_data: DeliverableCreate) -> Deliverable:
         """
         Create a new Deliverable from a Template
@@ -145,8 +176,24 @@ Respond with ONLY valid JSON in this exact format:
         transformation_notes = {}
 
         for i, binding in enumerate(template.section_bindings):
+            # Resolve to latest approved versions of all elements in this binding
+            # This ensures new deliverables always use current content, not the specific
+            # version ID stored in the template
+            latest_element_ids = []
+
+            for elem_id in binding.element_ids:
+                latest_element = self._get_latest_approved_element(elem_id)
+                if latest_element:
+                    latest_element_ids.append(latest_element.id)
+                    element_versions[str(latest_element.id)] = latest_element.version
+
+            # Create a modified binding with latest element IDs
+            from copy import copy
+            updated_binding = copy(binding)
+            updated_binding.element_ids = latest_element_ids
+
             section_content, section_notes = self._assemble_section_content(
-                binding,
+                updated_binding,
                 deliverable_data.instance_data,
                 story_model,
                 voice,
@@ -157,12 +204,6 @@ Respond with ONLY valid JSON in this exact format:
             # Store transformation notes if present
             if section_notes:
                 transformation_notes[binding.section_name] = section_notes
-
-            # Track element versions used
-            for elem_id in binding.element_ids:
-                element = self.unf_service.get_element(elem_id)
-                if element:
-                    element_versions[str(elem_id)] = element.version
 
         # Merge transformation_notes into metadata
         metadata = deliverable_data.metadata.copy() if deliverable_data.metadata else {}
@@ -689,25 +730,10 @@ Respond with ONLY valid JSON in this exact format:
             latest_element_ids = []
 
             for elem_id in binding.element_ids:
-                # Get current element
-                old_element = self.unf_service.get_element(elem_id)
-                if not old_element:
-                    continue
-
-                # Find latest approved version by name
-                all_elements = self.unf_service.list_elements()
-                latest_approved = None
-                latest_version = "0.0"
-
-                for elem in all_elements:
-                    if elem.name == old_element.name and elem.status == "approved":
-                        if elem.version > latest_version:
-                            latest_version = elem.version
-                            latest_approved = elem
-
-                if latest_approved:
-                    latest_element_ids.append(latest_approved.id)
-                    element_versions[str(latest_approved.id)] = latest_approved.version
+                latest_element = self._get_latest_approved_element(elem_id)
+                if latest_element:
+                    latest_element_ids.append(latest_element.id)
+                    element_versions[str(latest_element.id)] = latest_element.version
 
             # Create a modified binding with latest element IDs for refresh
             from copy import copy
